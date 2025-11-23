@@ -7,9 +7,10 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-// Photon'un Hashtable'ýný kullanmak için alias
+// Photon Hashtable alias
 using Hashtable = ExitGames.Client.Photon.Hashtable;
 
+[RequireComponent(typeof(PhotonView))]
 public class LobbyManager : MonoBehaviourPunCallbacks
 {
     [Header("Panels")]
@@ -23,7 +24,6 @@ public class LobbyManager : MonoBehaviourPunCallbacks
     [SerializeField] private TMP_Text statusText;
 
     [Header("Create Room UI")]
-    [SerializeField] private TMP_InputField createRoom_RoomNameInput;
     [SerializeField] private TMP_InputField createRoom_NicknameInput;
 
     [Header("Join Room UI")]
@@ -47,9 +47,8 @@ public class LobbyManager : MonoBehaviourPunCallbacks
     private void Awake()
     {
         PhotonNetwork.AutomaticallySyncScene = true;
-        PhotonNetwork.GameVersion = "1.0"; // Ýstersen deðiþtir
+        PhotonNetwork.GameVersion = "1.0";
 
-        // Baþlangýçta sadece main panel açýk olsun
         ShowOnlyPanel(mainPanel);
         settingsPanel.SetActive(false);
 
@@ -57,7 +56,7 @@ public class LobbyManager : MonoBehaviourPunCallbacks
         PhotonNetwork.ConnectUsingSettings();
     }
 
-    #region PUN Callbacks
+    #region PUN CALLBACKS
 
     public override void OnConnectedToMaster()
     {
@@ -79,52 +78,60 @@ public class LobbyManager : MonoBehaviourPunCallbacks
 
     public override void OnCreateRoomFailed(short returnCode, string message)
     {
-        statusText.text = $"Create room failed: {message}";
+        if (returnCode == (short)ErrorCode.GameIdAlreadyExists)
+        {
+            statusText.text = "Code conflict. Creating new code...";
+            CreateRoomWithRandomCode();
+        }
+        else
+        {
+            statusText.text = $"Create room failed: {message}";
+        }
     }
 
     public override void OnJoinRoomFailed(short returnCode, string message)
     {
-        statusText.text = $"Join room failed: {message}";
+        if (returnCode == (short)ErrorCode.GameDoesNotExist)
+        {
+            statusText.text = "Room not found. Check the code.";
+        }
+        else
+        {
+            statusText.text = $"Join room failed: {message}";
+        }
     }
 
     public override void OnJoinedRoom()
     {
-        statusText.text = $"Joined room: {PhotonNetwork.CurrentRoom.Name}";
         ShowOnlyPanel(lobbyPanel);
 
-        lobby_RoomNameText.text = PhotonNetwork.CurrentRoom.Name;
+        string roomCode = PhotonNetwork.CurrentRoom.Name;
+        lobby_RoomNameText.text = $"Room: {roomCode}";
 
-        // Start Game butonu sadece master client'ta aktif
         startGameButton.gameObject.SetActive(PhotonNetwork.IsMasterClient);
 
         RefreshPlayerList();
 
         if (pingCoroutine != null)
             StopCoroutine(pingCoroutine);
+
         pingCoroutine = StartCoroutine(UpdatePingCoroutine());
     }
 
     public override void OnPlayerEnteredRoom(Player newPlayer)
     {
-        statusText.text = $"{newPlayer.NickName} joined.";
         RefreshPlayerList();
     }
 
     public override void OnPlayerLeftRoom(Player otherPlayer)
     {
-        statusText.text = $"{otherPlayer.NickName} left.";
         RefreshPlayerList();
     }
 
     public override void OnLeftRoom()
     {
-        statusText.text = "Left room.";
-
         if (pingCoroutine != null)
-        {
             StopCoroutine(pingCoroutine);
-            pingCoroutine = null;
-        }
 
         ClearPlayerList();
         ShowOnlyPanel(mainPanel);
@@ -132,31 +139,24 @@ public class LobbyManager : MonoBehaviourPunCallbacks
 
     public override void OnMasterClientSwitched(Player newMasterClient)
     {
-        // Master deðiþtiyse Start Game butonunu güncelle
         startGameButton.gameObject.SetActive(PhotonNetwork.IsMasterClient);
+        // master deðiþtiyse KickButton görünürlüklerini de güncelle
+        RefreshPlayerList();
     }
 
     public override void OnPlayerPropertiesUpdate(Player targetPlayer, Hashtable changedProps)
     {
-        if (changedProps == null)
-            return;
-
-        if (changedProps.ContainsKey(PingKey))
+        if (changedProps.ContainsKey(PingKey) &&
+            playerListItems.TryGetValue(targetPlayer.ActorNumber, out var item))
         {
-            int ping = (int)changedProps[PingKey];
-
-            if (playerListItems.TryGetValue(targetPlayer.ActorNumber, out var item))
-            {
-                item.UpdatePing(ping);
-            }
+            item.UpdatePing((int)changedProps[PingKey]);
         }
     }
 
     #endregion
 
-    #region UI Button Methods
+    #region BUTTON METHODS
 
-    // MAIN
     public void OnClick_OpenCreateRoomPanel()
     {
         ShowOnlyPanel(createRoomPanel);
@@ -174,6 +174,11 @@ public class LobbyManager : MonoBehaviourPunCallbacks
         settingsPanel.SetActive(true);
     }
 
+    public void OnClick_CloseSettings()
+    {
+        settingsPanel.SetActive(false);
+    }
+
     public void OnClick_QuitGame()
     {
 #if UNITY_EDITOR
@@ -183,17 +188,10 @@ public class LobbyManager : MonoBehaviourPunCallbacks
 #endif
     }
 
-    // CREATE ROOM PANEL
+    // CREATE ROOM
     public void OnClick_CreateRoom_Confirm()
     {
-        string roomName = createRoom_RoomNameInput.text;
         string nickname = createRoom_NicknameInput.text;
-
-        if (string.IsNullOrEmpty(roomName))
-        {
-            statusText.text = "Room name cannot be empty.";
-            return;
-        }
 
         if (string.IsNullOrEmpty(nickname))
         {
@@ -201,17 +199,8 @@ public class LobbyManager : MonoBehaviourPunCallbacks
             return;
         }
 
-        PhotonNetwork.NickName = nickname; // Ýleride buraya Steam adýný verebilirsin
-
-        RoomOptions options = new RoomOptions
-        {
-            MaxPlayers = 4,
-            IsVisible = true,
-            IsOpen = true
-        };
-
-        PhotonNetwork.CreateRoom(roomName, options);
-        statusText.text = "Creating room...";
+        PhotonNetwork.NickName = nickname;
+        CreateRoomWithRandomCode();
     }
 
     public void OnClick_CreateRoom_Back()
@@ -219,15 +208,15 @@ public class LobbyManager : MonoBehaviourPunCallbacks
         ShowOnlyPanel(mainPanel);
     }
 
-    // JOIN ROOM PANEL
+    // JOIN ROOM
     public void OnClick_JoinRoom_Confirm()
     {
-        string roomName = joinRoom_RoomNameInput.text;
+        string roomCode = joinRoom_RoomNameInput.text;
         string nickname = joinRoom_NicknameInput.text;
 
-        if (string.IsNullOrEmpty(roomName))
+        if (!IsValidRoomCode(roomCode))
         {
-            statusText.text = "Room number/name cannot be empty.";
+            statusText.text = "Room code must be 7 digits.";
             return;
         }
 
@@ -238,9 +227,9 @@ public class LobbyManager : MonoBehaviourPunCallbacks
         }
 
         PhotonNetwork.NickName = nickname;
+        PhotonNetwork.JoinRoom(roomCode);
 
-        PhotonNetwork.JoinRoom(roomName);
-        statusText.text = "Joining room...";
+        statusText.text = $"Joining room {roomCode}...";
     }
 
     public void OnClick_JoinRoom_Back()
@@ -248,14 +237,13 @@ public class LobbyManager : MonoBehaviourPunCallbacks
         ShowOnlyPanel(mainPanel);
     }
 
-    // LOBBY PANEL
+    // LOBBY
     public void OnClick_StartGame()
     {
-        if (!PhotonNetwork.IsMasterClient)
-            return;
-
-        // AutomaticallySyncScene = true olduðu için tüm client'lar bu sahneye geçer
-        PhotonNetwork.LoadLevel("GameScene");
+        if (PhotonNetwork.IsMasterClient)
+        {
+            PhotonNetwork.LoadLevel("GameScene");
+        }
     }
 
     public void OnClick_LobbySettings()
@@ -267,66 +255,53 @@ public class LobbyManager : MonoBehaviourPunCallbacks
     {
         if (PhotonNetwork.IsMasterClient)
         {
-            // Odayý kuran çýkarken diðerlerini de at
             photonView.RPC(nameof(KickAllPlayers), RpcTarget.Others);
         }
 
         PhotonNetwork.LeaveRoom();
     }
 
-    public void OnClick_CloseSettings()
-    {
-        settingsPanel.SetActive(false);
-    }
-
     #endregion
 
-    #region Helper Methods
+    #region HELPERS
 
     private void ShowOnlyPanel(GameObject panelToShow)
     {
-        if (mainPanel != null)
-            mainPanel.SetActive(panelToShow == mainPanel);
-
-        if (createRoomPanel != null)
-            createRoomPanel.SetActive(panelToShow == createRoomPanel);
-
-        if (joinRoomPanel != null)
-            joinRoomPanel.SetActive(panelToShow == joinRoomPanel);
-
-        if (lobbyPanel != null)
-            lobbyPanel.SetActive(panelToShow == lobbyPanel);
-        // settingsPanel ayrý açýlýp kapanýyor
+        mainPanel.SetActive(panelToShow == mainPanel);
+        createRoomPanel.SetActive(panelToShow == createRoomPanel);
+        joinRoomPanel.SetActive(panelToShow == joinRoomPanel);
+        lobbyPanel.SetActive(panelToShow == lobbyPanel);
     }
 
-    private void RefreshPlayerList()
+    private string GenerateRoomCode()
     {
-        ClearPlayerList();
-
-        foreach (Player player in PhotonNetwork.PlayerList)
-        {
-            GameObject itemObj = Instantiate(playerListItemPrefab, playerListContainer);
-            var item = itemObj.GetComponent<PlayerListItem>();
-
-            int ping = 0;
-            if (player.CustomProperties != null && player.CustomProperties.ContainsKey(PingKey))
-                ping = (int)player.CustomProperties[PingKey];
-
-            item.Setup(player, ping);
-
-            playerListItems[player.ActorNumber] = item;
-        }
+        return Random.Range(1000000, 10000000).ToString(); // 7 haneli
     }
 
-    private void ClearPlayerList()
+    private void CreateRoomWithRandomCode()
     {
-        foreach (var kvp in playerListItems)
-        {
-            if (kvp.Value != null)
-                Destroy(kvp.Value.gameObject);
-        }
+        string code = GenerateRoomCode();
 
-        playerListItems.Clear();
+        RoomOptions options = new RoomOptions
+        {
+            MaxPlayers = 4,
+            IsVisible = true,
+            IsOpen = true
+        };
+
+        PhotonNetwork.CreateRoom(code, options);
+        statusText.text = $"Creating room... Code: {code}";
+    }
+
+    private bool IsValidRoomCode(string code)
+    {
+        if (string.IsNullOrEmpty(code) || code.Length != 7)
+            return false;
+
+        foreach (char c in code)
+            if (!char.IsDigit(c)) return false;
+
+        return true;
     }
 
     private IEnumerator UpdatePingCoroutine()
@@ -335,12 +310,63 @@ public class LobbyManager : MonoBehaviourPunCallbacks
 
         while (true)
         {
-            int ping = PhotonNetwork.GetPing();
-            hash[PingKey] = ping;
+            hash[PingKey] = PhotonNetwork.GetPing();
             PhotonNetwork.LocalPlayer.SetCustomProperties(hash);
 
             yield return new WaitForSeconds(1f);
         }
+    }
+
+    private void RefreshPlayerList()
+    {
+        ClearPlayerList();
+
+        foreach (Player player in PhotonNetwork.PlayerList)
+        {
+            GameObject obj = Instantiate(playerListItemPrefab, playerListContainer);
+            var item = obj.GetComponent<PlayerListItem>();
+
+            int ping = player.CustomProperties.ContainsKey(PingKey)
+                ? (int)player.CustomProperties[PingKey]
+                : 0;
+
+            // BURADA this geçiriyoruz ki KickPlayer çaðrýlabilsin
+            item.Setup(player, ping, this);
+
+            playerListItems[player.ActorNumber] = item;
+        }
+    }
+
+    private void ClearPlayerList()
+    {
+        foreach (var kv in playerListItems)
+        {
+            if (kv.Value != null)
+                Destroy(kv.Value.gameObject);
+        }
+
+        playerListItems.Clear();
+    }
+
+    // Master'ýn tek bir oyuncuyu atmasý için
+    public void KickPlayer(int actorNumber)
+    {
+        if (!PhotonNetwork.IsMasterClient)
+            return;
+
+        if (PhotonNetwork.CurrentRoom == null)
+            return;
+
+        if (PhotonNetwork.CurrentRoom.Players.TryGetValue(actorNumber, out Player targetPlayer))
+        {
+            photonView.RPC(nameof(ForceKick), targetPlayer);
+        }
+    }
+
+    [PunRPC]
+    private void ForceKick()
+    {
+        PhotonNetwork.LeaveRoom();
     }
 
     [PunRPC]

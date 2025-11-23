@@ -3446,6 +3446,7 @@ GameObject:
   m_Component:
   - component: {fileID: 688054337}
   - component: {fileID: 688054336}
+  - component: {fileID: 688054338}
   m_Layer: 0
   m_Name: LobbyManager
   m_TagString: Untagged
@@ -3471,7 +3472,6 @@ MonoBehaviour:
   lobbyPanel: {fileID: 1918689269}
   settingsPanel: {fileID: 2081683506}
   statusText: {fileID: 2063098908}
-  createRoom_RoomNameInput: {fileID: 430876247}
   createRoom_NicknameInput: {fileID: 615420867}
   joinRoom_RoomNameInput: {fileID: 24975089}
   joinRoom_NicknameInput: {fileID: 501661264}
@@ -3497,6 +3497,28 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &688054338
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 688054335}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: aa584fbee541324448dd18d8409c7a41, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  ObservedComponentsFoldoutOpen: 1
+  Group: 0
+  prefixField: -1
+  Synchronization: 3
+  OwnershipTransfer: 0
+  observableSearch: 2
+  ObservedComponents: []
+  sceneViewId: 1
+  InstantiationId: 0
+  isRuntimeInstantiated: 0
 --- !u!1 &692181319
 GameObject:
   m_ObjectHideFlags: 0
@@ -5601,7 +5623,7 @@ RectTransform:
   m_AnchorMin: {x: 0.5, y: 1}
   m_AnchorMax: {x: 0.5, y: 1}
   m_AnchoredPosition: {x: 0, y: -336}
-  m_SizeDelta: {x: 200, y: 50}
+  m_SizeDelta: {x: 650, y: 50}
   m_Pivot: {x: 0.5, y: 1}
 --- !u!114 &1852951774
 MonoBehaviour:
@@ -5657,8 +5679,8 @@ MonoBehaviour:
   m_fontSizeMin: 18
   m_fontSizeMax: 72
   m_fontStyle: 0
-  m_HorizontalAlignment: 1
-  m_VerticalAlignment: 256
+  m_HorizontalAlignment: 2
+  m_VerticalAlignment: 512
   m_textAlignment: 65535
   m_characterSpacing: 0
   m_wordSpacing: 0
