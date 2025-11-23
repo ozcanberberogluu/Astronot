@@ -330,7 +330,7 @@ GameObject:
   - component: {fileID: 3004590602134055882}
   - component: {fileID: 4851739204631501521}
   m_Layer: 0
-  m_Name: Astronot
+  m_Name: Player
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
