@@ -15,6 +15,22 @@ public class GameManager : MonoBehaviourPunCallbacks
         }
 
         SpawnPlayer();
+        SetupSpaceshipRadarTarget();
+    }
+
+    private void SetupSpaceshipRadarTarget()
+    {
+        // Sahnedeki uzay mekiÄŸini bul ve RadarTarget ekle
+        GameObject spaceship = GameObject.Find("Mekik");
+        if (spaceship != null)
+        {
+            RadarTarget radarTarget = spaceship.GetComponent<RadarTarget>();
+            if (radarTarget == null)
+            {
+                radarTarget = spaceship.AddComponent<RadarTarget>();
+                radarTarget.type = RadarTargetType.Ship;
+            }
+        }
     }
 
     private void SpawnPlayer()
@@ -25,7 +41,7 @@ public class GameManager : MonoBehaviourPunCallbacks
             return;
         }
 
-        // Her oyuncuya actorNumber'a göre farklý spawn
+        // Her oyuncuya actorNumber'a gï¿½re farklï¿½ spawn
         int index = (PhotonNetwork.LocalPlayer.ActorNumber - 1) % spawnPoints.Length;
         Transform spawn = spawnPoints[index];
 

@@ -27,11 +27,19 @@ public class PlayerController : MonoBehaviourPun
 
         if (currentHealth <= 0f)
             currentHealth = maxHealth;
+
+        // Radar iÃ§in RadarTarget component'ini otomatik ekle
+        RadarTarget radarTarget = GetComponent<RadarTarget>();
+        if (radarTarget == null)
+        {
+            radarTarget = gameObject.AddComponent<RadarTarget>();
+            radarTarget.type = RadarTargetType.Player;
+        }
     }
 
     private void Start()
     {
-        // Sadece kendi player'ýmýzda kamera / ses açýk olsun
+        // Sadece kendi player'ï¿½mï¿½zda kamera / ses aï¿½ï¿½k olsun
         if (!photonView.IsMine)
         {
             var cam = GetComponentInChildren<Camera>();
@@ -58,11 +66,11 @@ public class PlayerController : MonoBehaviourPun
         float inputX = Input.GetAxisRaw("Horizontal");
         float inputZ = Input.GetAxisRaw("Vertical");
 
-        // Y düzleminde input
+        // Y dï¿½zleminde input
         Vector3 inputDir = new Vector3(inputX, 0f, inputZ);
         inputDir = Vector3.ClampMagnitude(inputDir, 1f);
 
-        // Karakter yönüne göre dünya uzayýna çevir
+        // Karakter yï¿½nï¿½ne gï¿½re dï¿½nya uzayï¿½na ï¿½evir
         Vector3 moveDirWorld = transform.TransformDirection(inputDir);
 
         float healthPercent = currentHealth / maxHealth;
@@ -73,7 +81,7 @@ public class PlayerController : MonoBehaviourPun
 
         float speed = walkSpeed;
 
-        // LowHP iken Shift / Ctrl devre dýþý
+        // LowHP iken Shift / Ctrl devre dï¿½ï¿½ï¿½
         if (!isLowHP)
         {
             if (wantsRun)
@@ -82,10 +90,10 @@ public class PlayerController : MonoBehaviourPun
                 speed = slowWalkSpeed;
         }
 
-        // SimpleMove: hem hareket hem yerçekimi
+        // SimpleMove: hem hareket hem yerï¿½ekimi
         controller.SimpleMove(moveDirWorld * speed);
 
-        // Mouse X ile karakteri döndür
+        // Mouse X ile karakteri dï¿½ndï¿½r
         float mouseX = Input.GetAxis("Mouse X");
         transform.Rotate(Vector3.up * mouseX * mouseSensitivity);
     }
@@ -109,7 +117,7 @@ public class PlayerController : MonoBehaviourPun
 
         if (moveMag > 0.01f)
         {
-            animSpeed = 0.7f; // normal yürüyüþ
+            animSpeed = 0.7f; // normal yï¿½rï¿½yï¿½ï¿½
 
             if (!isLowHP)
             {
@@ -120,11 +128,11 @@ public class PlayerController : MonoBehaviourPun
             }
             else
             {
-                animSpeed = 0.4f;      // Low HP'de yavaþlama
+                animSpeed = 0.4f;      // Low HP'de yavaï¿½lama
             }
         }
 
-        // MoveSpeed blend tree için
+        // MoveSpeed blend tree iï¿½in
         animator.SetFloat(MoveSpeedHash, animSpeed, 0.1f, Time.deltaTime);
     }
 
@@ -133,6 +141,6 @@ public class PlayerController : MonoBehaviourPun
         if (!photonView.IsMine) return;
 
         currentHealth = Mathf.Clamp(currentHealth - amount, 0f, maxHealth);
-        // Ölüm / respawn sonradan eklenecek
+        // ï¿½lï¿½m / respawn sonradan eklenecek
     }
 }
