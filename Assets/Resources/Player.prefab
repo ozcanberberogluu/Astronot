@@ -672,6 +672,12 @@ MonoBehaviour:
   runSpeed: 3
   slowWalkSpeed: 0.2
   mouseSensitivity: 3
+  jumpForce: 2
+  gravity: -3
+  groundCheckDistance: 0.1
+  groundLayer:
+    serializedVersion: 2
+    m_Bits: 1
   maxHealth: 100
   currentHealth: 100
 --- !u!114 &2772262864978488570
