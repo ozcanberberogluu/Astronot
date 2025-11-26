@@ -41,6 +41,10 @@ MonoBehaviour:
   - RespawnSpaceship
   - KickAllPlayers
   - ForceKick
+  - OnJump
+  - RPC_AddCash
+  - RPC_DisableResource
+  - RPC_PlayMineFeedback
   DisableAutoOpenWizard: 1
   ShowSettings: 1
   DevRegionSetOnce: 0
