@@ -47,6 +47,8 @@ MonoBehaviour:
   - RPC_PlayMineFeedback
   - RPC_OnFootstep
   - RPC_OnImpact
+  - RPC_EndStorm
+  - RPC_StartStorm
   DisableAutoOpenWizard: 1
   ShowSettings: 1
   DevRegionSetOnce: 0
