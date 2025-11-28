@@ -45,6 +45,8 @@ MonoBehaviour:
   - RPC_AddCash
   - RPC_DisableResource
   - RPC_PlayMineFeedback
+  - RPC_OnFootstep
+  - RPC_OnImpact
   DisableAutoOpenWizard: 1
   ShowSettings: 1
   DevRegionSetOnce: 0

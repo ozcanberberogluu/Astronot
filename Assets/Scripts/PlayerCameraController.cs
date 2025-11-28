@@ -19,20 +19,25 @@ public class PlayerCameraController : MonoBehaviour
     public float maxPitch = 80f;
 
     private PhotonView pv;
-    private float pitch = 0f;   // kamera dikey açýsý
+    private float pitch = 0f;
+
+    // Screen shake
+    private bool isShaking = false;
+    private float shakeTimer = 0f;
+    private float shakeDuration = 0f;
+    private float shakeAmplitude = 0f;
 
     private void Awake()
     {
         pv = GetComponentInParent<PhotonView>();
 
-        // Hedef atanmadýysa parent Player root'u kullan
         if (pv != null && target == null)
             target = pv.transform;
     }
 
     private void Start()
     {
-        // Sadece local player için kamera aktif olsun
+        // Local olmayan oyuncularýn kamerasýný kapatalým
         if (pv != null && !pv.IsMine)
         {
             var cam = GetComponent<Camera>();
@@ -40,40 +45,33 @@ public class PlayerCameraController : MonoBehaviour
 
             var listener = GetComponent<AudioListener>();
             if (listener != null) listener.enabled = false;
+
+            enabled = false; // Uzaktan kameralar LateUpdate çalýþtýrmasýn
+            return;
         }
 
-        // Mouse'u kilitlemek istersen (istersen kapatabilirsin)
-        if (pv != null && pv.IsMine)
-        {
-            Cursor.lockState = CursorLockMode.Locked;
-            Cursor.visible = false;
-        }
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
     }
 
     private void LateUpdate()
     {
-        // Sadece local oyuncunun kamerasý çalýþsýn
-        if (pv == null || !pv.IsMine)
-            return;
-
-        if (target == null)
-            return;
+        if (target == null) return;
 
         HandleLook();
         HandleFollow();
+        ApplyShake();
     }
 
     private void HandleLook()
     {
-        // Mouse Y ile pitch (dikey) kontrol
         float mouseY = Input.GetAxis("Mouse Y");
-        pitch -= mouseY * mouseSensitivityY;      // ters çevirme (FPS oyunlardaki klasik)
+        pitch -= mouseY * mouseSensitivityY;
         pitch = Mathf.Clamp(pitch, minPitch, maxPitch);
     }
 
     private void HandleFollow()
     {
-        // Konum: player pozisyonu + local offset
         Vector3 localOffsetWorld = target.TransformDirection(fpsLocalOffset);
         Vector3 desiredPos = target.position + localOffsetWorld;
 
@@ -93,5 +91,39 @@ public class PlayerCameraController : MonoBehaviour
             desiredRot,
             rotationLerpSpeed * Time.deltaTime
         );
+    }
+
+    private void ApplyShake()
+    {
+        if (!isShaking) return;
+
+        shakeTimer += Time.deltaTime;
+        if (shakeTimer >= shakeDuration)
+        {
+            isShaking = false;
+            return;
+        }
+
+        // Zamanla azalan þiddet
+        float t = 1f - (shakeTimer / shakeDuration);
+        float currentAmp = shakeAmplitude * t;
+
+        Vector3 offset = Random.insideUnitSphere * currentAmp;
+        offset.z = 0f; // ileri/geri çok atmasýn, sadece X/Y sallansýn
+
+        transform.position += offset;
+    }
+
+    /// <summary>
+    /// Yaratýk adýmlarýnda vs. çaðýrmak için kamera sarsma fonksiyonu.
+    /// </summary>
+    public void ShakeCamera(float amplitude, float duration)
+    {
+        if (pv != null && !pv.IsMine) return; // sadece kendi kameramýzý salla
+
+        shakeAmplitude = amplitude;
+        shakeDuration = duration;
+        shakeTimer = 0f;
+        isShaking = true;
     }
 }
