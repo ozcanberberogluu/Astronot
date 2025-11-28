@@ -18,11 +18,18 @@ public class MineableResource : MonoBehaviourPun
     [Tooltip("Bu damarýn toplam para deðeri (tamamen bitene kadar).")]
     public int totalValue = 65;
 
-    [Tooltip("Her kazma tick'inde oyuncuya verilecek para miktarý.")]
-    public int valuePerTick = 7;
+    [Tooltip("Her kazma tick'inde üretilecek maden parçasýnýn deðeri.")]
+    public int valuePerChunk = 7;
 
-    [Tooltip("Her tick çantayý yüzde kaç dolduracak (türe göre farklý).")]
-    public float bagPercentPerTick = 8f;
+    [Header("Chunk Spawn")]
+    [Tooltip("Bu damar kýrýldýðýnda düþecek parça prefabý (Resources klasöründe olmalý).")]
+    public GameObject oreChunkPrefab;
+
+    [Tooltip("Parçalarýn saçýlacaðý yarýçap.")]
+    public float scatterRadius = 1.5f;
+
+    [Tooltip("Parçalar spawnlanýrken yukarýya verilecek küçük hýz.")]
+    public float spawnUpImpulse = 2f;
 
     [Header("UI")]
     public Canvas worldCanvas;             // [E] Topla canvas'ý
@@ -48,13 +55,15 @@ public class MineableResource : MonoBehaviourPun
             worldCanvas.enabled = false;
     }
 
+    // Eski sistemden kalan, þimdilik çanta ile iþimiz yok ama çaðrýlan yerde sorun çýkarmasýn diye býrakýyoruz.
     public float GetBagUsagePercent()
     {
-        return bagPercentPerTick;
+        // Artýk çanta doluluðu yok, istersen burada 0 dönebiliriz.
+        return 0f;
     }
 
     /// <summary>
-    /// Bir kazma tick'i. Baþarýlýysa true döner ve valueOut/percentOut set edilir.
+    /// Bir kazma tick'i. Baþarýlýysa true döner ve üretilen parça deðeri valueOut'a yazýlýr.
     /// Maden tamamen bittiyse kendi içinde disable olur.
     /// </summary>
     public bool TryMineOnce(out int valueOut, out float percentOut)
@@ -65,11 +74,12 @@ public class MineableResource : MonoBehaviourPun
         if (isDepleted || remainingValue <= 0)
             return false;
 
-        int gained = Mathf.Min(valuePerTick, remainingValue);
-        remainingValue -= gained;
+        int chunkValue = Mathf.Min(valuePerChunk, remainingValue);
+        remainingValue -= chunkValue;
 
-        valueOut = gained;
-        percentOut = bagPercentPerTick;
+        valueOut = chunkValue;
+
+        SpawnOreChunk(chunkValue);
 
         if (remainingValue <= 0)
         {
@@ -80,6 +90,45 @@ public class MineableResource : MonoBehaviourPun
         PlayMineFeedback();
 
         return true;
+    }
+
+    private void SpawnOreChunk(int chunkValue)
+    {
+        if (oreChunkPrefab == null)
+        {
+            Debug.LogWarning("MineableResource: oreChunkPrefab atanmadý!");
+            return;
+        }
+
+        // Rastgele yanlara saçýlma
+        Vector2 rand = Random.insideUnitCircle * scatterRadius;
+        Vector3 spawnPos = transform.position + new Vector3(rand.x, 0.5f, rand.y);
+
+        GameObject obj;
+
+        if (PhotonNetwork.IsConnected)
+        {
+            // Resources klasöründe olmalý
+            obj = PhotonNetwork.Instantiate(oreChunkPrefab.name, spawnPos, Quaternion.identity);
+        }
+        else
+        {
+            obj = Instantiate(oreChunkPrefab, spawnPos, Quaternion.identity);
+        }
+
+        OreChunk chunk = obj.GetComponent<OreChunk>();
+        if (chunk != null)
+        {
+            chunk.Initialize(oreType, chunkValue);
+        }
+
+        // Hafif yukarý fýrlatma
+        Rigidbody rb = obj.GetComponent<Rigidbody>();
+        if (rb != null)
+        {
+            Vector3 upImpulse = Vector3.up * spawnUpImpulse;
+            rb.AddForce(upImpulse, ForceMode.Impulse);
+        }
     }
 
     public void ShowPrompt(bool show)

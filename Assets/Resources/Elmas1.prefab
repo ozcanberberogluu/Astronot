@@ -173,7 +173,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
   m_AnchoredPosition: {x: -0.00392, y: 0.00742}
-  m_SizeDelta: {x: 0.2, y: 0.2}
+  m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!223 &2429160097067654884
 Canvas:
@@ -436,7 +436,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 0, g: 0, b: 0, a: 0.88235295}
-  m_RaycastTarget: 1
+  m_RaycastTarget: 0
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
   m_OnCullStateChanged:
@@ -606,8 +606,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   oreType: 0
   totalValue: 65
-  valuePerTick: 7
-  bagPercentPerTick: 8
+  valuePerChunk: 7
+  oreChunkPrefab: {fileID: 6230882245145099412, guid: 151c358888c20924f9662790677d5a13,
+    type: 3}
+  scatterRadius: 1.5
+  spawnUpImpulse: 2
   worldCanvas: {fileID: 2429160097067654884}
   fxSpawnPoint: {fileID: 506903001872102360}
   mineFxPrefab: {fileID: 1000012142692022, guid: a475880e7da0e9548aa05cb7933752cd,

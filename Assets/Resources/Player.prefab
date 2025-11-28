@@ -685,6 +685,7 @@ MonoBehaviour:
     m_Bits: 1
   maxHealth: 100
   currentHealth: 100
+  stormWindMultiplier: 0.5
 --- !u!114 &2772262864978488570
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -710,13 +711,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 83d573181da90a744b5ee8e623b387d4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  maxBagPercent: 100
-  currentBagPercent: 0
-  currentBagValue: 0
   bagPercentText: {fileID: 728633059916649635}
   bagInfoText: {fileID: 2599859940018247367}
   interactKey: 101
-  mineInterval: 3
+  mineInterval: 2
+  grabRange: 8
+  grabSphereRadius: 0.5
+  maxGrabDistance: 12
 --- !u!1 &2461774726959965309
 GameObject:
   m_ObjectHideFlags: 0

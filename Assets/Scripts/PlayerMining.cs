@@ -1,25 +1,25 @@
-using UnityEngine;
+﻿using UnityEngine;
 using Photon.Pun;
 using TMPro;
 
 [RequireComponent(typeof(PhotonView))]
 public class PlayerMining : MonoBehaviourPun
 {
-    [Header("Inventory")]
-    public float maxBagPercent = 100f;
-    public float currentBagPercent = 0f;
-    public int currentBagValue = 0; // �antadaki para
-
     [Header("UI")]
-    public TMP_Text bagPercentText;   // "�anta: %32"
-    public TMP_Text bagInfoText;      // "�anta doldu!", "+7 para" vs.
+    public TMP_Text bagPercentText;   // Artık kullanılmıyor, istersen Inspector'da boş bırak
+    public TMP_Text bagInfoText;      // Info mesajları için kullanıyoruz
 
     [Header("Input / Mining")]
     public KeyCode interactKey = KeyCode.E;
-    public float mineInterval = 3f;   // E'yi bas�l� tutunca her 3 saniyede bir kaz
+    public float mineInterval = 3f;   // E'yi basılı tutunca her 3 saniyede bir kaz
+
+    [Header("Grab Settings")]
+    public float grabRange = 8f;
+    public float grabSphereRadius = 0.5f;
+    public float maxGrabDistance = 12f;
 
     private MineableResource currentResource;
-    private bool isInBaseZone = false;
+    private bool isInBaseZone = false; // Şimdilik kullanılmıyor, sepet sisteminde kullanacağız
 
     private Animator animator;
     private static readonly int IsMiningHash = Animator.StringToHash("IsMining");
@@ -28,11 +28,18 @@ public class PlayerMining : MonoBehaviourPun
     private Coroutine infoCoroutine;
 
     private GameManager gameManager;
+    private Camera playerCamera;
+    private OreChunk grabbedChunk;
 
     private void Awake()
     {
         animator = GetComponentInChildren<Animator>();
         gameManager = FindObjectOfType<GameManager>();
+
+        if (playerCamera == null)
+        {
+            playerCamera = GetComponentInChildren<Camera>();
+        }
     }
 
     private void Start()
@@ -44,7 +51,9 @@ public class PlayerMining : MonoBehaviourPun
         }
         else
         {
-            UpdateBagUI();
+            // Eski çanta UI'sini sıfırla
+            if (bagPercentText != null)
+                bagPercentText.text = "";
         }
     }
 
@@ -54,14 +63,17 @@ public class PlayerMining : MonoBehaviourPun
             return;
 
         HandleMiningInput();
-        HandleBaseInput();
+        HandleGrabInput();
+        // HandleBaseInput();  // çanta sistemi kalktığı için şimdilik kullanmıyoruz
     }
+
+    // --------- MADEN KAZMA ---------
 
     private void HandleMiningInput()
     {
         bool playMiningAnim = false;
 
-        if (currentResource != null && !IsBagFull())
+        if (currentResource != null)
         {
             bool holdingE = Input.GetKey(interactKey);
 
@@ -89,70 +101,22 @@ public class PlayerMining : MonoBehaviourPun
         SetMiningAnimation(playMiningAnim);
     }
 
-    private void HandleBaseInput()
-    {
-        if (!isInBaseZone)
-            return;
-
-        if (currentBagValue <= 0)
-            return;
-
-        if (Input.GetKeyDown(interactKey))
-        {
-            if (gameManager != null)
-            {
-                gameManager.AddCash(currentBagValue);
-            }
-
-            currentBagValue = 0;
-            currentBagPercent = 0f;
-            ShowInfo("�anta bo�alt�ld�.");
-            UpdateBagUI();
-        }
-    }
-
     private void DoMineTick()
     {
         if (currentResource == null)
             return;
 
-        float usage = currentResource.GetBagUsagePercent();
-
-        // �anta dolulu�unu kontrol et
-        if (currentBagPercent + usage > maxBagPercent + 0.01f)
+        // Çanta sistemi yok, sadece maden parçası üretilecek
+        if (currentResource.TryMineOnce(out int chunkValue, out float _))
         {
-            currentBagPercent = maxBagPercent;
-            ShowInfo("�anta doldu!");
-            UpdateBagUI();
-            return;
-        }
-
-        // Maden taraf�nda sto�u d���r (tick)
-        if (currentResource.TryMineOnce(out int gainedValue, out float _))
-        {
-            currentBagPercent += usage;
-            currentBagPercent = Mathf.Clamp(currentBagPercent, 0f, maxBagPercent);
-
-            currentBagValue += gainedValue;
-            UpdateBagUI();
-            ShowInfo($"+{gainedValue} para");
-
-            // TryMineOnce i�inde:
-            // - remainingValue d���yor
-            // - bitti�inde MineAndDisable
-            // - her seferinde PlayMineFeedback => FX + ses + shake (RPC ile herkese)
+            ShowInfo($"+{chunkValue} değerinde maden parçası");
         }
         else
         {
-            // Maden zaten bitmi� olabilir
+            // Maden bitmiş olabilir
             currentResource.ShowPrompt(false);
             currentResource = null;
         }
-    }
-
-    private bool IsBagFull()
-    {
-        return currentBagPercent >= maxBagPercent - 0.01f;
     }
 
     private void SetMiningAnimation(bool active)
@@ -166,14 +130,99 @@ public class PlayerMining : MonoBehaviourPun
         // IsMining parametresi PhotonAnimatorView'da Discrete olarak sync edilmeli
     }
 
-    private void UpdateBagUI()
+    // --------- MADEN PARÇASINI TUTMA (GRAB) ---------
+
+    private void HandleGrabInput()
     {
-        if (bagPercentText != null)
+        if (playerCamera == null)
+            return;
+
+        bool holdingMouse = Input.GetMouseButton(0);
+
+        if (holdingMouse)
         {
-            int percentInt = Mathf.RoundToInt(currentBagPercent);
-            bagPercentText.text = $"�anta: %{percentInt}";
+            if (grabbedChunk == null)
+            {
+                // İlk kez basıldıysa, bakılan maden parçasını bul
+                TryStartGrab();
+            }
+        }
+        else
+        {
+            if (grabbedChunk != null)
+            {
+                // Mouse bırakıldı, chunk'ı bırak
+                grabbedChunk.EndGrab(photonView);
+                grabbedChunk = null;
+            }
+        }
+        // Hareket ettirme işini OreChunk kendi Update'inde yapıyor
+    }
+
+    private void TryStartGrab()
+    {
+        // 1) Önce raycast
+        Ray ray = new Ray(playerCamera.transform.position, playerCamera.transform.forward);
+
+        if (Physics.SphereCast(ray, grabSphereRadius, out RaycastHit hit, grabRange))
+        {
+            OreChunk chunk = hit.collider.GetComponentInParent<OreChunk>();
+            if (chunk != null)
+            {
+                grabbedChunk = chunk;
+                grabbedChunk.BeginGrab(photonView);
+                return;
+            }
+        }
+
+        // 2) Raycast olmadı → OverlapSphere ile bul
+        Collider[] cols = Physics.OverlapSphere(
+            playerCamera.transform.position + playerCamera.transform.forward * 2f,
+            1f
+        );
+
+        float bestDist = float.MaxValue;
+        OreChunk best = null;
+
+        foreach (var c in cols)
+        {
+            OreChunk chunk = c.GetComponentInParent<OreChunk>();
+            if (chunk == null) continue;
+
+            float d = Vector3.Distance(transform.position, chunk.transform.position);
+            if (d < bestDist && d < maxGrabDistance)
+            {
+                bestDist = d;
+                best = chunk;
+            }
+        }
+
+        if (best != null)
+        {
+            grabbedChunk = best;
+            grabbedChunk.BeginGrab(photonView);
         }
     }
+
+
+    // --------- BASE / DEPOSIT ---------
+    // Çanta sistemi kalktığı için şimdilik base'de bir şey yapmıyoruz.
+    // Market arabası sistemini eklerken burayı sepet boşaltma için kullanacağız.
+
+    /*
+    private void HandleBaseInput()
+    {
+        if (!isInBaseZone)
+            return;
+
+        if (Input.GetKeyDown(interactKey))
+        {
+            // İleride: market arabasını boşalt
+        }
+    }
+    */
+
+    // --------- UI YARDIMCI ---------
 
     private void ShowInfo(string msg)
     {
@@ -212,13 +261,11 @@ public class PlayerMining : MonoBehaviourPun
             return;
         }
 
-        // Base
+        // Base (ileride sepet için kullanacağız)
         DepositZone depot = other.GetComponent<DepositZone>();
         if (depot != null)
         {
             isInBaseZone = true;
-            if (currentBagValue > 0)
-                ShowInfo("[E] �antay� bo�alt");
         }
     }
 
