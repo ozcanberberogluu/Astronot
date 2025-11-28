@@ -10,14 +10,18 @@ public class OreChunk : MonoBehaviourPun
     public int value;
 
     [Header("Grab Settings")]
-    public float holdDistance = 3f;
+    public float holdDistance = 2f;          // default daha yakın
     public float minHoldDistance = 1f;
-    public float maxHoldDistance = 8f;
-    public float followSpeed = 18f;
+    public float maxHoldDistance = 6f;
+    public float followSpeed = 12f;         // biraz düşürdük, daha smooth
 
     [Header("Ground Check")]
-    public float groundPadding = 0.05f;
-    public float sphereRadius = 0.25f;      // chunk alt yarıçapı
+    [Tooltip("Chunk ile terrain arasında kalmasını istediğimiz minimum boşluk.")]
+    public float groundPadding = 0.08f;
+
+    [Tooltip("Terrain / zemin çarpışma testleri için yarıçap.")]
+    public float sphereRadius = 0.35f;
+
     public LayerMask groundMask;
 
     [Header("Drop Physics")]
@@ -71,13 +75,18 @@ public class OreChunk : MonoBehaviourPun
         rb.isKinematic = true;
         rb.useGravity = false;
 
-        PhotonView holder = PhotonView.Find(holderViewID);
-
+        PhotonView holder = PhotonView.Find(holderId);
         if (holder != null)
         {
             var cam = holder.GetComponentInChildren<Camera>(true);
             if (cam != null)
+            {
                 holdTarget = cam.transform;
+
+                // *** ÖNEMLİ: İlk tutuş mesafesini gerçek mesafeden ayarla ***
+                float dist = Vector3.Distance(holdTarget.position, transform.position);
+                holdDistance = Mathf.Clamp(dist, minHoldDistance, maxHoldDistance);
+            }
         }
     }
 
@@ -100,13 +109,16 @@ public class OreChunk : MonoBehaviourPun
 
         if (isGrabbed && holdTarget != null)
         {
+            // Scroll yönü: ileri çevirince uzaklaşsın, geri çevirince yaklaşsın
             float scroll = Input.GetAxis("Mouse ScrollWheel");
-
-            holdDistance = Mathf.Clamp(
-                holdDistance + scroll * 2f,
-                minHoldDistance,
-                maxHoldDistance
-            );
+            if (Mathf.Abs(scroll) > 0.001f)
+            {
+                holdDistance = Mathf.Clamp(
+                    holdDistance + scroll * 2f,
+                    minHoldDistance,
+                    maxHoldDistance
+                );
+            }
         }
     }
 
@@ -124,15 +136,13 @@ public class OreChunk : MonoBehaviourPun
         }
     }
 
-    // ----------------------------------------------------------
-    //              TERRAIN SAFE MOVE SYSTEM
-    // ----------------------------------------------------------
+    // ---------------- TERRAIN SAFE MOVE ----------------
     private void MoveGrabbed()
     {
-        // 1) Normal hedef pozisyon
+        // 1) Kamera önünde hedef pozisyon
         Vector3 targetPos = holdTarget.position + holdTarget.forward * holdDistance;
 
-        // 2) Terrain'e SPHERECAST xuống (down) – EN SAĞLAM YÖNTEM
+        // 2) SphereCast ile zemini yakala (terrain için daha güvenli)
         Vector3 sphereOrigin = targetPos + Vector3.up * 1.0f;
 
         if (Physics.SphereCast(
@@ -142,28 +152,25 @@ public class OreChunk : MonoBehaviourPun
             out RaycastHit hit,
             2f,
             groundMask,
-            QueryTriggerInteraction.Ignore
-        ))
+            QueryTriggerInteraction.Ignore))
         {
-            // Eğer hedef pozisyon zeminin altında kalıyorsa → YUKARI CLAMP
-            float desiredY = hit.point.y + groundPadding;
+            float groundY = hit.point.y + groundPadding;
 
-            if (targetPos.y < desiredY)
-                targetPos.y = desiredY;
+            // Hedef zeminin ALTINDA ise Y'yi yukarı çek
+            if (targetPos.y < groundY)
+                targetPos.y = groundY;
         }
 
-        // 3) Collider OVERLAP kontrolü → terrain içine girmeyi önle
-        Collider[] cols = Physics.OverlapSphere(targetPos, sphereRadius, groundMask);
+        // 3) Eğer hala terrain ile overlap varsa hafif yukarı it
+        Collider[] cols = Physics.OverlapSphere(targetPos, sphereRadius, groundMask, QueryTriggerInteraction.Ignore);
         if (cols.Length > 0)
         {
-            // içerideyse → 0.05 yukarı iter
             targetPos.y += groundPadding;
         }
 
-        // 4) Smooth movement
-        rb.MovePosition(
-            Vector3.Lerp(transform.position, targetPos, followSpeed * Time.fixedDeltaTime)
-        );
+        // 4) Smooth hareket
+        Vector3 newPos = Vector3.Lerp(transform.position, targetPos, followSpeed * Time.fixedDeltaTime);
+        rb.MovePosition(newPos);
     }
 
     private void LimitFallSpeed()
