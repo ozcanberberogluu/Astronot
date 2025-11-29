@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using Photon.Pun;
 
@@ -37,12 +38,15 @@ public class ShoppingCart : MonoBehaviourPun
 
     private Rigidbody rb;
 
-    // network state
+    // Push state
     private bool isPushed = false;
     private int pusherViewId = -1;
     private Transform pusherTransform;
 
     private float bobTime;
+
+    // Sepetin içinde duran OreChunk'lar
+    private readonly HashSet<OreChunk> containedChunks = new HashSet<OreChunk>();
 
     private void Awake()
     {
@@ -53,6 +57,7 @@ public class ShoppingCart : MonoBehaviourPun
 
         if (groundMask == 0)
         {
+            // Varsayýlan olarak Default + Terrain
             groundMask = LayerMask.GetMask("Default", "Terrain");
         }
     }
@@ -126,17 +131,28 @@ public class ShoppingCart : MonoBehaviourPun
 
     // --------- PUSH API (PlayerCartPush bunu çaðýracak) ---------
 
+    /// <summary>
+    /// Oyuncu sepeti itmeye baþlamak istediðinde PlayerCartPush burayý çaðýrýr.
+    /// </summary>
     public void BeginPush(PhotonView holder)
     {
         if (holder == null || !holder.IsMine)
             return;
 
+        // Sepetin owner'ý bu oyuncu olsun
         if (!photonView.IsMine)
             photonView.RequestOwnership();
 
+        // Sepetin içindeki tüm chunk'larýn owner'lýðýný da bu oyuncuya devret
+        TransferContainedChunksOwnership(holder);
+
+        // Push state'i herkese duyur
         photonView.RPC(nameof(RPC_BeginPush), RpcTarget.AllBuffered, holder.ViewID);
     }
 
+    /// <summary>
+    /// Oyuncu sepeti býrakmak istediðinde çaðrýlýr.
+    /// </summary>
     public void EndPush(PhotonView holder)
     {
         if (holder == null || !holder.IsMine)
@@ -164,5 +180,48 @@ public class ShoppingCart : MonoBehaviourPun
         isPushed = false;
         pusherViewId = -1;
         pusherTransform = null;
+    }
+
+    /// <summary>
+    /// Bu sepetin içindeki bütün OreChunk'larýn owner'lýðýný,
+    /// sepeti iten oyuncuya devreder.
+    /// </summary>
+    private void TransferContainedChunksOwnership(PhotonView newOwner)
+    {
+        if (newOwner == null || !newOwner.IsMine)
+            return;
+
+        foreach (OreChunk chunk in containedChunks)
+        {
+            if (chunk == null) continue;
+
+            PhotonView chunkView = chunk.GetComponent<PhotonView>();
+            if (chunkView == null) continue;
+
+            if (!chunkView.IsMine)
+            {
+                chunkView.RequestOwnership();
+            }
+        }
+    }
+
+    // --------- CHUNK LÝSTESÝ API ---------
+
+    /// <summary>
+    /// Sepet trigger'ýna giren OreChunk'ý kayýt eder.
+    /// </summary>
+    public void RegisterChunk(OreChunk chunk)
+    {
+        if (chunk == null) return;
+        containedChunks.Add(chunk);
+    }
+
+    /// <summary>
+    /// Sepet trigger'ýndan çýkan OreChunk'ý listeden çýkarýr.
+    /// </summary>
+    public void UnregisterChunk(OreChunk chunk)
+    {
+        if (chunk == null) return;
+        containedChunks.Remove(chunk);
     }
 }
