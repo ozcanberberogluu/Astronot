@@ -2,236 +2,219 @@ using System.Collections;
 using UnityEngine;
 using Photon.Pun;
 
-public enum OreType
-{
-    Diamond,
-    Gold,
-    Silver,
-    Iron
-}
-
+/// <summary>
+/// E'ye basýlý tutarak kazýlabilen maden.
+/// Her tick'te OreChunk spawn eder, titrer, FX ve ses oynatýr.
+/// </summary>
 public class MineableResource : MonoBehaviourPun
 {
-    public OreType oreType;
-
-    [Header("Amounts")]
-    [Tooltip("Bu damarýn toplam para deðeri (tamamen bitene kadar).")]
-    public int totalValue = 65;
-
-    [Tooltip("Her kazma tick'inde üretilecek maden parçasýnýn deðeri.")]
-    public int valuePerChunk = 7;
-
-    [Header("Chunk Spawn")]
-    [Tooltip("Bu damar kýrýldýðýnda düþecek parça prefabý (Resources klasöründe olmalý).")]
-    public GameObject oreChunkPrefab;
-
-    [Tooltip("Parçalarýn saçýlacaðý yarýçap.")]
-    public float scatterRadius = 1.5f;
-
-    [Tooltip("Parçalar spawnlanýrken yukarýya verilecek küçük hýz.")]
-    public float spawnUpImpulse = 2f;
-
     [Header("UI")]
-    public Canvas worldCanvas;             // [E] Topla canvas'ý
+    [SerializeField] private Canvas promptCanvas;   // [E] Topla canvas'ý
 
-    [Header("FX & Audio")]
-    [Tooltip("FX'in çýkacaðý nokta. Boþ býrakýlýrsa madenin kendi pozisyonu kullanýlýr.")]
-    public Transform fxSpawnPoint;
-    public GameObject mineFxPrefab;
-    public AudioClip mineAudioClip;
-    public float shakeDuration = 0.15f;
-    public float shakeMagnitude = 0.05f;
-    public float soundMinDistance = 3f;
-    public float soundMaxDistance = 30f;
+    [Header("Mining Ayarlarý")]
+    [SerializeField] private float tickInterval = 2f;   // 2 sn'de bir tick
+    [SerializeField] private int maxTicks = 5;
+    [SerializeField] private GameObject oreChunkPrefab;
+    [SerializeField] private int chunksPerTick = 1;
+    [SerializeField] private float spawnRadius = 0.5f;
+    [SerializeField] private Transform spawnOrigin;      // boþsa kendi transformu
 
-    private int remainingValue;
-    private bool isDepleted = false;
+    [Header("Görsel / Model")]
+    [SerializeField] private Transform model;            // scale + shake için
+    [SerializeField] private Vector3 depletedScale = new Vector3(0.2f, 0.2f, 0.2f);
+    [SerializeField] private float shrinkSpeed = 4f;
+
+    [Header("FX")]
+    [Tooltip("Tick olduðunda instantiate edilecek particle prefabý.")]
+    [SerializeField] private GameObject fxPrefab;
+    [Tooltip("FX objesini kaç saniye sonra yok edelim? (FX kendi kendini destroy ediyorsa 0 býrak)")]
+    [SerializeField] private float fxAutoDestroyTime = 3f;
+
+    [Header("Ses")]
+    [SerializeField] private AudioSource audioSource;    // maden üzerindeki AudioSource
+    [SerializeField] private AudioClip mineTickClip;     // her tick'te çalýnacak ses
+    [Tooltip("Yakýn mesafede tam ses için min distance.")]
+    [SerializeField] private float minDistance = 4f;
+    [Tooltip("Bu mesafeden sonra ses tamamen kýsýlýr.")]
+    [SerializeField] private float maxDistance = 25f;
+
+    [Header("Titreme")]
+    [SerializeField] private float shakeDuration = 0.15f;
+    [SerializeField] private float shakeStrength = 0.03f;
+
+    private float tickTimer;
+    private int currentTicks;
+    private bool depleted;
+
+    private Coroutine shakeCoroutine;
 
     private void Awake()
     {
-        remainingValue = totalValue;
+        // Spawn origin yoksa kendini kullan
+        if (spawnOrigin == null)
+            spawnOrigin = transform;
 
-        if (worldCanvas != null)
-            worldCanvas.enabled = false;
-    }
+        // Prompt canvas'ý atlamýþsan, çocuklarda otomatik bul
+        if (promptCanvas == null)
+            promptCanvas = GetComponentInChildren<Canvas>(true);
 
-    // Eski sistemden kalan, þimdilik çanta ile iþimiz yok ama çaðrýlan yerde sorun çýkarmasýn diye býrakýyoruz.
-    public float GetBagUsagePercent()
-    {
-        // Artýk çanta doluluðu yok, istersen burada 0 dönebiliriz.
-        return 0f;
-    }
+        // Oyun baþýnda [E] TOPLA kapalý olsun
+        if (promptCanvas != null)
+            promptCanvas.enabled = false;
 
-    /// <summary>
-    /// Bir kazma tick'i. Baþarýlýysa true döner ve üretilen parça deðeri valueOut'a yazýlýr.
-    /// Maden tamamen bittiyse kendi içinde disable olur.
-    /// </summary>
-    public bool TryMineOnce(out int valueOut, out float percentOut)
-    {
-        valueOut = 0;
-        percentOut = 0f;
+        // Model yoksa kendi transformunu kullan
+        if (model == null)
+            model = transform;
 
-        if (isDepleted || remainingValue <= 0)
-            return false;
+        // AudioSource atlanmýþsa üstünde ara
+        if (audioSource == null)
+            audioSource = GetComponentInChildren<AudioSource>();
 
-        int chunkValue = Mathf.Min(valuePerChunk, remainingValue);
-        remainingValue -= chunkValue;
-
-        valueOut = chunkValue;
-
-        SpawnOreChunk(chunkValue);
-
-        if (remainingValue <= 0)
+        // 3D ses ayarlarý
+        if (audioSource != null)
         {
-            MineAndDisable();
-        }
-
-        // Her baþarýlý tick'te FX/ses/titreþim oynat
-        PlayMineFeedback();
-
-        return true;
-    }
-
-    private void SpawnOreChunk(int chunkValue)
-    {
-        if (oreChunkPrefab == null)
-        {
-            Debug.LogWarning("MineableResource: oreChunkPrefab atanmadý!");
-            return;
-        }
-
-        // Rastgele yanlara saçýlma
-        Vector2 rand = Random.insideUnitCircle * scatterRadius;
-        Vector3 spawnPos = transform.position + new Vector3(rand.x, 0.5f, rand.y);
-
-        GameObject obj;
-
-        if (PhotonNetwork.IsConnected)
-        {
-            // Resources klasöründe olmalý
-            obj = PhotonNetwork.Instantiate(oreChunkPrefab.name, spawnPos, Quaternion.identity);
-        }
-        else
-        {
-            obj = Instantiate(oreChunkPrefab, spawnPos, Quaternion.identity);
-        }
-
-        OreChunk chunk = obj.GetComponent<OreChunk>();
-        if (chunk != null)
-        {
-            chunk.Initialize(oreType, chunkValue);
-        }
-
-        // Hafif yukarý fýrlatma
-        Rigidbody rb = obj.GetComponent<Rigidbody>();
-        if (rb != null)
-        {
-            Vector3 upImpulse = Vector3.up * spawnUpImpulse;
-            rb.AddForce(upImpulse, ForceMode.Impulse);
+            audioSource.spatialBlend = 1f; // tam 3D
+            audioSource.rolloffMode = AudioRolloffMode.Linear;
+            audioSource.minDistance = minDistance;
+            audioSource.maxDistance = maxDistance;
         }
     }
 
-    public void ShowPrompt(bool show)
+    private void Update()
     {
-        if (worldCanvas != null && !isDepleted)
-            worldCanvas.enabled = show;
-    }
-
-    public void MineAndDisable()
-    {
-        if (isDepleted) return;
-
-        isDepleted = true;
-
-        if (photonView != null)
-            photonView.RPC(nameof(RPC_DisableResource), RpcTarget.AllBuffered);
-        else
-            RPC_DisableResource();
-    }
-
-    [PunRPC]
-    private void RPC_DisableResource()
-    {
-        if (worldCanvas != null)
-            worldCanvas.enabled = false;
-
-        Collider col = GetComponent<Collider>();
-        if (col != null) col.enabled = false;
-
-        MeshRenderer mr = GetComponent<MeshRenderer>();
-        if (mr != null) mr.enabled = false;
-
-        // Ýstersen tamamen yok etmek için:
-        // Destroy(gameObject);
-    }
-
-    // -------- FX + SES + SHAKE --------
-
-    /// <summary>
-    /// Tüm client'larda FX + ses + titreþim oynat.
-    /// </summary>
-    public void PlayMineFeedback()
-    {
-        if (photonView != null)
+        // Maden bitmiþse yavaþça küçült ve sonra yok et
+        if (depleted && model != null)
         {
-            photonView.RPC(nameof(RPC_PlayMineFeedback), RpcTarget.All);
-        }
-        else
-        {
-            StartCoroutine(PlayMineFeedbackRoutine());
-        }
-    }
+            model.localScale = Vector3.Lerp(model.localScale, depletedScale,
+                shrinkSpeed * Time.deltaTime);
 
-    [PunRPC]
-    private void RPC_PlayMineFeedback()
-    {
-        StartCoroutine(PlayMineFeedbackRoutine());
-    }
-
-    private IEnumerator PlayMineFeedbackRoutine()
-    {
-        Vector3 pos = fxSpawnPoint != null ? fxSpawnPoint.position : transform.position;
-
-        // FX
-        if (mineFxPrefab != null)
-        {
-            GameObject fx = Instantiate(mineFxPrefab, pos, Quaternion.identity);
-            Destroy(fx, 3f); // FX kendi kendini yok etmiyorsa
-        }
-
-        // SES (3D)
-        if (mineAudioClip != null)
-        {
-            GameObject go = new GameObject("MineOneShotAudio");
-            go.transform.position = pos;
-
-            AudioSource source = go.AddComponent<AudioSource>();
-            source.clip = mineAudioClip;
-            source.spatialBlend = 1f;             // %100 3D
-            source.minDistance = soundMinDistance;
-            source.maxDistance = soundMaxDistance;
-            source.rolloffMode = AudioRolloffMode.Linear;
-            source.Play();
-
-            Destroy(go, mineAudioClip.length + 0.1f);
-        }
-
-        // TÝTREÞÝM
-        if (shakeDuration > 0f && shakeMagnitude > 0f)
-        {
-            Vector3 originalLocalPos = transform.localPosition;
-            float elapsed = 0f;
-
-            while (elapsed < shakeDuration)
+            if (model.localScale.magnitude <= depletedScale.magnitude + 0.01f)
             {
-                elapsed += Time.deltaTime;
-                Vector3 randomOffset = Random.insideUnitSphere * shakeMagnitude;
-                randomOffset.y = 0f; // Ýstersen Y'i sabit býrak
-                transform.localPosition = originalLocalPos + randomOffset;
-                yield return null;
+                if (photonView.IsMine)
+                    PhotonNetwork.Destroy(gameObject);
             }
-
-            transform.localPosition = originalLocalPos;
         }
+    }
+
+    /// <summary>
+    /// PlayerMining her frame burayý çaðýrýr, E basýlýyken.
+    /// Tick zamanlamasý sadece MasterClient'te tutulur.
+    /// </summary>
+    public void Mine(float deltaTime, PlayerMining miner)
+    {
+        // Tick hesabý sadece MasterClient'te
+        if (!PhotonNetwork.IsMasterClient)
+            return;
+
+        if (depleted) return;
+        if (oreChunkPrefab == null) return;
+
+        tickTimer += deltaTime;
+
+        if (tickTimer < tickInterval)
+            return;
+
+        tickTimer = 0f;
+        currentTicks++;
+
+        // Her tick'te herkese FX+ses+shake oynat
+        photonView.RPC(nameof(RPC_OnTick), RpcTarget.All);
+
+        // Chunk spawn sadece MasterClient'te
+        SpawnChunks();
+
+        if (currentTicks >= maxTicks)
+        {
+            photonView.RPC(nameof(RPC_OnDepleted), RpcTarget.AllBuffered);
+        }
+    }
+
+    private void SpawnChunks()
+    {
+        if (!PhotonNetwork.IsMasterClient)
+            return;
+
+        for (int i = 0; i < chunksPerTick; i++)
+        {
+            Vector3 rand = Random.insideUnitSphere;
+            rand.y = Mathf.Abs(rand.y);
+            rand *= spawnRadius;
+
+            Vector3 spawnPos = spawnOrigin.position + rand;
+            spawnPos.y = spawnOrigin.position.y + 0.2f;
+
+            PhotonNetwork.Instantiate(oreChunkPrefab.name, spawnPos, Quaternion.identity);
+        }
+    }
+
+    [PunRPC]
+    private void RPC_OnTick()
+    {
+        PlayTickEffects();
+    }
+
+    [PunRPC]
+    private void RPC_OnDepleted()
+    {
+        depleted = true;
+    }
+
+    /// <summary>
+    /// [E] TOPLA world-space canvas'ýný aç/kapat.
+    /// PlayerMining trigger enter/exit'te çaðýrýyor.
+    /// </summary>
+    public void SetPromptVisible(bool visible)
+    {
+        if (promptCanvas != null)
+            promptCanvas.enabled = visible;
+    }
+
+    // ================== FX / SES / SHAKE ==================
+
+    private void PlayTickEffects()
+    {
+        // Ses
+        if (audioSource != null && mineTickClip != null)
+        {
+            audioSource.PlayOneShot(mineTickClip);
+        }
+
+        // FX prefab
+        if (fxPrefab != null && spawnOrigin != null)
+        {
+            GameObject fx = Instantiate(fxPrefab, spawnOrigin.position, spawnOrigin.rotation);
+
+            if (fxAutoDestroyTime > 0f)
+            {
+                Destroy(fx, fxAutoDestroyTime);
+            }
+        }
+
+        // Titreme
+        if (model != null)
+        {
+            if (shakeCoroutine != null)
+                StopCoroutine(shakeCoroutine);
+
+            shakeCoroutine = StartCoroutine(ShakeRoutine());
+        }
+    }
+
+    private IEnumerator ShakeRoutine()
+    {
+        Vector3 originalPos = model.localPosition;
+        float t = 0f;
+
+        while (t < shakeDuration)
+        {
+            t += Time.deltaTime;
+            Vector3 offset = Random.insideUnitSphere * shakeStrength;
+            offset.y = Mathf.Abs(offset.y); // çok aþaðý sallanmasýn
+            model.localPosition = originalPos + offset;
+            yield return null;
+        }
+
+        model.localPosition = originalPos;
+        shakeCoroutine = null;
     }
 }

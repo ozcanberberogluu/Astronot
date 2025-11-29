@@ -16,7 +16,7 @@ GameObject:
   - component: {fileID: 9099734400269882815}
   - component: {fileID: 5647294553935737207}
   - component: {fileID: 7840252851805001586}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: OreChunk_Diamond
   m_TagString: Untagged
   m_Icon: {fileID: 0}

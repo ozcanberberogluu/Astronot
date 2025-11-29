@@ -15,6 +15,10 @@ public class GameManager : MonoBehaviourPunCallbacks
     [SerializeField] private TMP_Text totalCashText; // "Kasa: X para"
     private int totalCash = 0;
 
+    [Header("Cart")]
+    [SerializeField] private string cartPrefabName = "SepetModel";
+    [SerializeField] private Transform cartSpawnPoint;
+
     private void Awake()
     {
         if (Instance == null)
@@ -37,6 +41,13 @@ public class GameManager : MonoBehaviourPunCallbacks
         }
 
         SpawnPlayer();
+
+        // Oda başına sadece 1 sepet: MasterClient oluşturur
+        if (PhotonNetwork.IsMasterClient)
+        {
+            SpawnCart();
+        }
+
         SetupSpaceshipRadarTarget();
         UpdateTotalCashUI();
     }
@@ -68,6 +79,41 @@ public class GameManager : MonoBehaviourPunCallbacks
         Transform spawn = spawnPoints[index];
 
         PhotonNetwork.Instantiate(playerPrefabName, spawn.position, spawn.rotation);
+    }
+
+    private void SpawnCart()
+    {
+        if (string.IsNullOrEmpty(cartPrefabName))
+            return;
+
+        Vector3 pos;
+        Quaternion rot;
+
+        if (cartSpawnPoint != null)
+        {
+            pos = cartSpawnPoint.position;
+            rot = cartSpawnPoint.rotation;
+        }
+        else
+        {
+            // Eğer özel spawn point atamazsan, ilk oyuncu spawn noktasının önüne koy
+            Transform spawn = spawnPoints != null && spawnPoints.Length > 0
+                ? spawnPoints[0]
+                : null;
+
+            if (spawn != null)
+            {
+                pos = spawn.position + spawn.forward * 4f;
+                rot = spawn.rotation;
+            }
+            else
+            {
+                pos = Vector3.zero;
+                rot = Quaternion.identity;
+            }
+        }
+
+        PhotonNetwork.Instantiate(cartPrefabName, pos, rot);
     }
 
     // ---------- KASA SİSTEMİ ----------

@@ -1,167 +1,140 @@
 ﻿using UnityEngine;
 using Photon.Pun;
-using TMPro;
 
 [RequireComponent(typeof(PhotonView))]
 public class PlayerMining : MonoBehaviourPun
 {
-    [Header("UI")]
-    public TMP_Text bagPercentText;   // Artık kullanılmıyor, istersen Inspector'da boş bırak
-    public TMP_Text bagInfoText;      // Info mesajları için kullanıyoruz
+    [Header("Genel Referanslar")]
+    [SerializeField] private Camera playerCamera;
+    [SerializeField] private Animator animator;
 
-    [Header("Input / Mining")]
-    public KeyCode interactKey = KeyCode.E;
-    public float mineInterval = 3f;   // E'yi basılı tutunca her 3 saniyede bir kaz
+    [Header("Mining Ayarları")]
+    [SerializeField] private KeyCode mineKey = KeyCode.E;
 
-    [Header("Grab Settings")]
-    public float grabRange = 8f;
-    public float grabSphereRadius = 0.5f;
-    public float maxGrabDistance = 12f;
+    [Header("Ore Grab Ayarları")]
+    [SerializeField] private float grabRange = 4f;
+    [SerializeField] private float grabSphereRadius = 0.4f;
+    [SerializeField] private float maxGrabDistance = 8f;
 
-    private MineableResource currentResource;
-    private bool isInBaseZone = false; // Şimdilik kullanılmıyor, sepet sisteminde kullanacağız
+    [Header("Diğer Sistemler")]
+    [SerializeField] private PlayerCartPush cartPush;   // sepet iterken mining kapansın
 
-    private Animator animator;
-    private static readonly int IsMiningHash = Animator.StringToHash("IsMining");
+    // --- Mining state ---
+    private MineableResource currentResource;   // Trigger'a girdiğimiz maden
+    private bool isMining;
+    private int hashIsMining;
 
-    private float mineTimer = 0f;
-    private Coroutine infoCoroutine;
-
-    private GameManager gameManager;
-    private Camera playerCamera;
+    // --- Grab state ---
     private OreChunk grabbedChunk;
+
+    private PhotonView pv;
 
     private void Awake()
     {
-        animator = GetComponentInChildren<Animator>();
-        gameManager = FindObjectOfType<GameManager>();
+        pv = GetComponent<PhotonView>();
+
+        if (!pv.IsMine)
+        {
+            enabled = false;
+            return;
+        }
 
         if (playerCamera == null)
         {
-            playerCamera = GetComponentInChildren<Camera>();
+            playerCamera = GetComponentInChildren<Camera>(true);
         }
-    }
 
-    private void Start()
-    {
-        if (!photonView.IsMine)
+        if (animator == null)
         {
-            if (bagPercentText != null) bagPercentText.gameObject.SetActive(false);
-            if (bagInfoText != null) bagInfoText.gameObject.SetActive(false);
+            animator = GetComponentInChildren<Animator>(true);
         }
-        else
+
+        if (cartPush == null)
         {
-            // Eski çanta UI'sini sıfırla
-            if (bagPercentText != null)
-                bagPercentText.text = "";
+            cartPush = GetComponent<PlayerCartPush>();
         }
+
+        hashIsMining = Animator.StringToHash("IsMining");
     }
 
     private void Update()
     {
-        if (!photonView.IsMine)
-            return;
+        if (!pv.IsMine) return;
 
-        HandleMiningInput();
-        HandleGrabInput();
-        // HandleBaseInput();  // çanta sistemi kalktığı için şimdilik kullanmıyoruz
+        // Sepeti iterken: mining + chunk grab tamamen kapalı
+        if (cartPush != null && cartPush.IsPushing)
+        {
+            StopMining();
+            StopGrab();
+            return;
+        }
+
+        HandleMining();
+        HandleGrab();
     }
 
-    // --------- MADEN KAZMA ---------
+    // ===================== MINING ======================
 
-    private void HandleMiningInput()
+    private void HandleMining()
     {
-        bool playMiningAnim = false;
+        bool mineHeld = Input.GetKey(mineKey);
 
-        if (currentResource != null)
+        if (mineHeld && currentResource != null)
         {
-            bool holdingE = Input.GetKey(interactKey);
-
-            if (holdingE)
+            // Animasyon
+            if (!isMining)
             {
-                playMiningAnim = true;
-                mineTimer += Time.deltaTime;
+                isMining = true;
+                if (animator != null)
+                    animator.SetBool(hashIsMining, true);
+            }
 
-                if (mineTimer >= mineInterval)
-                {
-                    mineTimer -= mineInterval;
-                    DoMineTick();
-                }
-            }
-            else
-            {
-                mineTimer = 0f;
-            }
+            // Tüm tick / titreme / FX / ses işini MineableResource hallediyor
+            currentResource.Mine(Time.deltaTime, this);
         }
         else
         {
-            mineTimer = 0f;
-        }
-
-        SetMiningAnimation(playMiningAnim);
-    }
-
-    private void DoMineTick()
-    {
-        if (currentResource == null)
-            return;
-
-        // Çanta sistemi yok, sadece maden parçası üretilecek
-        if (currentResource.TryMineOnce(out int chunkValue, out float _))
-        {
-            ShowInfo($"+{chunkValue} değerinde maden parçası");
-        }
-        else
-        {
-            // Maden bitmiş olabilir
-            currentResource.ShowPrompt(false);
-            currentResource = null;
+            StopMining();
         }
     }
 
-    private void SetMiningAnimation(bool active)
+    private void StopMining()
     {
-        if (animator == null) return;
+        if (!isMining) return;
 
-        bool current = animator.GetBool(IsMiningHash);
-        if (current == active) return;
-
-        animator.SetBool(IsMiningHash, active);
-        // IsMining parametresi PhotonAnimatorView'da Discrete olarak sync edilmeli
+        isMining = false;
+        if (animator != null)
+            animator.SetBool(hashIsMining, false);
     }
 
-    // --------- MADEN PARÇASINI TUTMA (GRAB) ---------
+    // ===================== ORE GRAB ====================
 
-    private void HandleGrabInput()
+    private void HandleGrab()
     {
-        if (playerCamera == null)
-            return;
-
         bool holdingMouse = Input.GetMouseButton(0);
 
         if (holdingMouse)
         {
             if (grabbedChunk == null)
             {
-                // İlk kez basıldıysa, bakılan maden parçasını bul
                 TryStartGrab();
             }
+            // grabbedChunk hareketini kendi OreChunk scriptin yapıyor
         }
         else
         {
             if (grabbedChunk != null)
             {
-                // Mouse bırakıldı, chunk'ı bırak
-                grabbedChunk.EndGrab(photonView);
-                grabbedChunk = null;
+                StopGrab();
             }
         }
-        // Hareket ettirme işini OreChunk kendi Update'inde yapıyor
     }
 
     private void TryStartGrab()
     {
-        // 1) Önce raycast
+        if (playerCamera == null) return;
+
+        // 1) SphereCast ile bakılan chunk'ı bul
         Ray ray = new Ray(playerCamera.transform.position, playerCamera.transform.forward);
 
         if (Physics.SphereCast(ray, grabSphereRadius, out RaycastHit hit, grabRange))
@@ -170,122 +143,83 @@ public class PlayerMining : MonoBehaviourPun
             if (chunk != null)
             {
                 grabbedChunk = chunk;
-                grabbedChunk.BeginGrab(photonView);
+                grabbedChunk.BeginGrab(pv);
                 return;
             }
         }
 
-        // 2) Raycast olmadı → OverlapSphere ile bul
-        Collider[] cols = Physics.OverlapSphere(
-            playerCamera.transform.position + playerCamera.transform.forward * 2f,
-            1f
-        );
+        // 2) Bakılan yönün etrafında en yakın chunk'ı ara
+        Vector3 center = playerCamera.transform.position + playerCamera.transform.forward * 2f;
+        Collider[] cols = Physics.OverlapSphere(center, 1.2f);
 
         float bestDist = float.MaxValue;
         OreChunk best = null;
 
-        foreach (var c in cols)
+        foreach (var col in cols)
         {
-            OreChunk chunk = c.GetComponentInParent<OreChunk>();
-            if (chunk == null) continue;
+            OreChunk c = col.GetComponentInParent<OreChunk>();
+            if (c == null) continue;
 
-            float d = Vector3.Distance(transform.position, chunk.transform.position);
-            if (d < bestDist && d < maxGrabDistance)
+            float d = Vector3.Distance(transform.position, c.transform.position);
+            if (d < bestDist && d <= maxGrabDistance)
             {
                 bestDist = d;
-                best = chunk;
+                best = c;
             }
         }
 
         if (best != null)
         {
             grabbedChunk = best;
-            grabbedChunk.BeginGrab(photonView);
+            grabbedChunk.BeginGrab(pv);
         }
     }
 
-
-    // --------- BASE / DEPOSIT ---------
-    // Çanta sistemi kalktığı için şimdilik base'de bir şey yapmıyoruz.
-    // Market arabası sistemini eklerken burayı sepet boşaltma için kullanacağız.
-
-    /*
-    private void HandleBaseInput()
+    private void StopGrab()
     {
-        if (!isInBaseZone)
-            return;
+        if (grabbedChunk == null) return;
 
-        if (Input.GetKeyDown(interactKey))
-        {
-            // İleride: market arabasını boşalt
-        }
-    }
-    */
-
-    // --------- UI YARDIMCI ---------
-
-    private void ShowInfo(string msg)
-    {
-        if (bagInfoText == null) return;
-
-        bagInfoText.text = msg;
-
-        if (infoCoroutine != null)
-            StopCoroutine(infoCoroutine);
-
-        infoCoroutine = StartCoroutine(ClearInfoAfterDelay());
+        grabbedChunk.EndGrab(pv);
+        grabbedChunk = null;
     }
 
-    private System.Collections.IEnumerator ClearInfoAfterDelay()
-    {
-        yield return new WaitForSeconds(2f);
-        if (bagInfoText != null)
-            bagInfoText.text = "";
-
-        infoCoroutine = null;
-    }
-
-    // -------- TRIGGERLAR --------
+    // ===================== TRIGGERLAR ==================
 
     private void OnTriggerEnter(Collider other)
     {
-        if (!photonView.IsMine)
-            return;
+        if (!pv.IsMine) return;
 
-        // Maden
-        MineableResource res = other.GetComponent<MineableResource>();
+        // 1) Maden alanına girdiysek
+        MineableResource res = other.GetComponentInParent<MineableResource>();
         if (res != null)
         {
+            // Eski madenin UI'ını kapat
+            if (currentResource != null && currentResource != res)
+            {
+                currentResource.SetPromptVisible(false);
+            }
+
             currentResource = res;
-            currentResource.ShowPrompt(true);
-            return;
+            currentResource.SetPromptVisible(true);   // [E] TOPLA aç
         }
 
-        // Base (ileride sepet için kullanacağız)
-        DepositZone depot = other.GetComponent<DepositZone>();
-        if (depot != null)
-        {
-            isInBaseZone = true;
-        }
+        // 2) Deposit / base vs. varsa, eski kodların varsa buraya eklenebilir
+        // DepositZone depot = other.GetComponent<DepositZone>();
+        // ...
     }
 
     private void OnTriggerExit(Collider other)
     {
-        if (!photonView.IsMine)
-            return;
+        if (!pv.IsMine) return;
 
-        MineableResource res = other.GetComponent<MineableResource>();
+        MineableResource res = other.GetComponentInParent<MineableResource>();
         if (res != null && res == currentResource)
         {
-            currentResource.ShowPrompt(false);
+            currentResource.SetPromptVisible(false);  // [E] TOPLA kapan
             currentResource = null;
-            return;
+            StopMining();
         }
 
-        DepositZone depot = other.GetComponent<DepositZone>();
-        if (depot != null)
-        {
-            isInBaseZone = false;
-        }
+        // DepositZone çıkış vs. burada ele alınabilir
     }
 }

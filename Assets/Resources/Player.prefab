@@ -518,6 +518,7 @@ GameObject:
   - component: {fileID: 6094178201048912432}
   - component: {fileID: 2772262864978488570}
   - component: {fileID: 5814190161796583448}
+  - component: {fileID: 3818685857987945665}
   m_Layer: 0
   m_Name: Player
   m_TagString: Player
@@ -711,13 +712,31 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 83d573181da90a744b5ee8e623b387d4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  bagPercentText: {fileID: 728633059916649635}
-  bagInfoText: {fileID: 2599859940018247367}
-  interactKey: 101
-  mineInterval: 2
+  playerCamera: {fileID: 8743226417933314578}
+  animator: {fileID: 0}
+  mineKey: 101
   grabRange: 8
-  grabSphereRadius: 0.5
-  maxGrabDistance: 12
+  grabSphereRadius: 0.4
+  maxGrabDistance: 8
+  cartPush: {fileID: 3818685857987945665}
+--- !u!114 &3818685857987945665
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2265980175043139023}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dd0260dcd6b99874baff8f24d58f81cb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  playerCamera: {fileID: 8743226417933314578}
+  pushRayRange: 3
+  pushSphereRadius: 0.25
+  pushMask:
+    serializedVersion: 2
+    m_Bits: 64
 --- !u!1 &2461774726959965309
 GameObject:
   m_ObjectHideFlags: 0

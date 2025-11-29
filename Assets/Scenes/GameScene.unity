@@ -742,6 +742,9 @@ MonoBehaviour:
   - {fileID: 1196301053}
   playerPrefabName: Player
   totalCashText: {fileID: 139482832}
+  cartPrefabName: SepetModel
+  cartSpawnPoint: {fileID: 343443806006543254, guid: 5b99ada960265a7428151663e4b9a2ee,
+    type: 3}
 --- !u!114 &974172008
 MonoBehaviour:
   m_ObjectHideFlags: 0
