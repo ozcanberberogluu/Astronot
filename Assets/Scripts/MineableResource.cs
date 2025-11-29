@@ -4,7 +4,8 @@ using Photon.Pun;
 
 /// <summary>
 /// E'ye basýlý tutarak kazýlabilen maden.
-/// Her tick'te OreChunk spawn eder, titrer, FX ve ses oynatýr.
+/// Tick baþýna OreChunk spawn eder, FX/ses/titreme oynatýr.
+/// Tick hesabý sadece MasterClient'te yapýlýr, ama tüm oyuncular kazabilir.
 /// </summary>
 public class MineableResource : MonoBehaviourPun
 {
@@ -19,7 +20,7 @@ public class MineableResource : MonoBehaviourPun
     [SerializeField] private float spawnRadius = 0.5f;
     [SerializeField] private Transform spawnOrigin;      // boþsa kendi transformu
 
-    [Header("Görsel / Model")]
+    [Header("Model / Depletion")]
     [SerializeField] private Transform model;            // scale + shake için
     [SerializeField] private Vector3 depletedScale = new Vector3(0.2f, 0.2f, 0.2f);
     [SerializeField] private float shrinkSpeed = 4f;
@@ -42,6 +43,7 @@ public class MineableResource : MonoBehaviourPun
     [SerializeField] private float shakeDuration = 0.15f;
     [SerializeField] private float shakeStrength = 0.03f;
 
+    // STATE
     private float tickTimer;
     private int currentTicks;
     private bool depleted;
@@ -102,10 +104,34 @@ public class MineableResource : MonoBehaviourPun
     /// </summary>
     public void Mine(float deltaTime, PlayerMining miner)
     {
-        // Tick hesabý sadece MasterClient'te
+        // Master deðilsek, mining isteðini MasterClient'e gönder
+        if (!PhotonNetwork.IsMasterClient)
+        {
+            photonView.RPC(nameof(RPC_MineRequest), RpcTarget.MasterClient, deltaTime);
+            return;
+        }
+
+        // MasterClient'teysek direkt iþleyelim
+        ProcessMine(deltaTime);
+    }
+
+    /// <summary>
+    /// Client'larýn MasterClient'e gönderdiði mining isteði.
+    /// </summary>
+    [PunRPC]
+    private void RPC_MineRequest(float deltaTime, PhotonMessageInfo _info)
+    {
         if (!PhotonNetwork.IsMasterClient)
             return;
 
+        ProcessMine(deltaTime);
+    }
+
+    /// <summary>
+    /// Asýl tick / chunk / FX hesaplarýnýn yapýldýðý yer (sadece MasterClient).
+    /// </summary>
+    private void ProcessMine(float deltaTime)
+    {
         if (depleted) return;
         if (oreChunkPrefab == null) return;
 
@@ -157,6 +183,9 @@ public class MineableResource : MonoBehaviourPun
     private void RPC_OnDepleted()
     {
         depleted = true;
+
+        if (promptCanvas != null)
+            promptCanvas.enabled = false;
     }
 
     /// <summary>
@@ -165,6 +194,8 @@ public class MineableResource : MonoBehaviourPun
     /// </summary>
     public void SetPromptVisible(bool visible)
     {
+        if (depleted) visible = false; // bitmiþ maden için asla gösterme
+
         if (promptCanvas != null)
             promptCanvas.enabled = visible;
     }
@@ -175,9 +206,7 @@ public class MineableResource : MonoBehaviourPun
     {
         // Ses
         if (audioSource != null && mineTickClip != null)
-        {
             audioSource.PlayOneShot(mineTickClip);
-        }
 
         // FX prefab
         if (fxPrefab != null && spawnOrigin != null)
@@ -185,9 +214,7 @@ public class MineableResource : MonoBehaviourPun
             GameObject fx = Instantiate(fxPrefab, spawnOrigin.position, spawnOrigin.rotation);
 
             if (fxAutoDestroyTime > 0f)
-            {
                 Destroy(fx, fxAutoDestroyTime);
-            }
         }
 
         // Titreme

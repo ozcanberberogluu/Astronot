@@ -173,7 +173,7 @@ MonoBehaviour:
   promptCanvas: {fileID: 4597494622500510762}
   tickInterval: 3
   maxTicks: 5
-  oreChunkPrefab: {fileID: 6230882245145099412, guid: 59296264447115f40bcf04a3d2fbeb9d,
+  oreChunkPrefab: {fileID: 6230882245145099412, guid: 151c358888c20924f9662790677d5a13,
     type: 3}
   chunksPerTick: 1
   spawnRadius: 0.5

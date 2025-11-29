@@ -53,7 +53,6 @@ public class ShoppingCart : MonoBehaviourPun
 
         if (groundMask == 0)
         {
-            // Varsayýlan olarak Default + Terrain
             groundMask = LayerMask.GetMask("Default", "Terrain");
         }
     }
@@ -66,7 +65,7 @@ public class ShoppingCart : MonoBehaviourPun
 
         Vector3 targetPos = transform.position;
 
-        // --- PUSH VARSA: oyuncunun önünde hizala ---
+        // PUSH VARSA: oyuncunun önünde hizala
         if (isPushed && pusherTransform != null)
         {
             Vector3 forward = pusherTransform.forward;
@@ -79,7 +78,7 @@ public class ShoppingCart : MonoBehaviourPun
             targetPos = pusherTransform.position + forward * pushDistanceFromPlayer;
         }
 
-        // --- Her durumda terrain üzerinde hover et ---
+        // Her durumda terrain üzerinde hover et
         targetPos = GetHoverPosition(targetPos);
 
         // Bobbing
@@ -101,7 +100,6 @@ public class ShoppingCart : MonoBehaviourPun
             {
                 Quaternion targetRot = Quaternion.LookRotation(dir);
 
-                // Modelin ön yüzü Unity'nin +Z yönüne bakmýyorsa offset uygula
                 if (Mathf.Abs(modelForwardOffsetY) > 0.01f)
                 {
                     targetRot *= Quaternion.Euler(0f, modelForwardOffsetY, 0f);

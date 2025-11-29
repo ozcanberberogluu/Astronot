@@ -55,6 +55,7 @@ MonoBehaviour:
   - RPC_EndPush
   - RPC_OnDepleted
   - RPC_OnTick
+  - RPC_MineRequest
   DisableAutoOpenWizard: 1
   ShowSettings: 1
   DevRegionSetOnce: 0

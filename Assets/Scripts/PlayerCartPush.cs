@@ -31,20 +31,13 @@ public class PlayerCartPush : MonoBehaviourPun
         }
 
         if (playerCamera == null)
-        {
             playerCamera = GetComponentInChildren<Camera>(true);
-        }
 
         if (playerMining == null)
-        {
             playerMining = GetComponent<PlayerMining>();
-        }
 
         if (pushMask == 0)
-        {
-            // Prefab sepeti 'Sepet' layer'ına koymuşsun, onu default olarak kullanıyoruz
             pushMask = LayerMask.GetMask("Sepet");
-        }
     }
 
     private void Update()
@@ -53,14 +46,12 @@ public class PlayerCartPush : MonoBehaviourPun
 
         bool holdingMouse = Input.GetMouseButton(0);
 
-        // 🔒 Elinde maden parçası varsa sepeti ASLA tutma
+        // Elinde maden parçası varsa sepeti ASLA tutma
         if (playerMining != null && playerMining.IsHoldingChunk)
         {
-            // Her ihtimale karşı, o anda push aktifse de bırakalım
             if (IsPushing)
-            {
                 StopPush();
-            }
+
             return;
         }
 
@@ -70,7 +61,6 @@ public class PlayerCartPush : MonoBehaviourPun
             {
                 TryStartPush();
             }
-            // IsPushing true ise hareket hesaplamasını ShoppingCart yapıyor
         }
         else
         {
@@ -86,7 +76,7 @@ public class PlayerCartPush : MonoBehaviourPun
         if (playerCamera == null)
             return;
 
-        // Elinde chunk varken buraya gelmemesi gerekiyor ama ekstra koruma:
+        // Ekstra güvenlik: elinde chunk varken asla
         if (playerMining != null && playerMining.IsHoldingChunk)
             return;
 

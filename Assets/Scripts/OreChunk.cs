@@ -10,10 +10,14 @@ public class OreChunk : MonoBehaviourPun
     public int value;
 
     [Header("Grab Settings")]
+    [Tooltip("Chunk tutulurken kamera önündeki varsayılan mesafe.")]
     public float holdDistance = 2f;          // default daha yakın
+
     public float minHoldDistance = 1f;
     public float maxHoldDistance = 6f;
-    public float followSpeed = 12f;         // biraz düşürdük, daha smooth
+
+    [Tooltip("Chunk'ın hedef pozisyona yaklaşma hızı.")]
+    public float followSpeed = 12f;         // biraz düşük, daha smooth
 
     [Header("Ground Check")]
     [Tooltip("Chunk ile terrain arasında kalmasını istediğimiz minimum boşluk.")]
@@ -22,11 +26,17 @@ public class OreChunk : MonoBehaviourPun
     [Tooltip("Terrain / zemin çarpışma testleri için yarıçap.")]
     public float sphereRadius = 0.35f;
 
+    [Tooltip("Terrain ve zemin layer'larını buraya atamalısın.")]
     public LayerMask groundMask;
 
     [Header("Drop Physics")]
+    [Tooltip("Chunk yere düştükten sonraki drag.")]
     public float dropDrag = 4f;
+
+    [Tooltip("Chunk yere düştükten sonraki angular drag.")]
     public float dropAngularDrag = 2f;
+
+    [Tooltip("Aşağı doğru maksimum düşüş hızı.")]
     public float maxFallSpeed = -6f;
 
     private Rigidbody rb;
@@ -43,7 +53,10 @@ public class OreChunk : MonoBehaviourPun
         rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
 
         if (groundMask == 0)
+        {
+            // Varsayılan: Default + Terrain
             groundMask = LayerMask.GetMask("Default", "Terrain");
+        }
     }
 
     public void Initialize(OreType type, int chunkValue)
@@ -52,18 +65,34 @@ public class OreChunk : MonoBehaviourPun
         value = chunkValue;
     }
 
+    /// <summary>
+    /// Oyuncu chunk'ı tutmaya başladığında PlayerMining burayı çağırır.
+    /// Sadece local holder çağırabilir.
+    /// </summary>
     public void BeginGrab(PhotonView holder)
     {
-        if (!holder.IsMine) return;
-        if (!photonView.IsMine) photonView.RequestOwnership();
+        if (holder == null || !holder.IsMine)
+            return;
 
-        photonView.RPC(nameof(RPC_BeginGrab), RpcTarget.AllBuffered, holder.ViewID);
+        // 🔑 OWNER’I AL: join oyuncu chunk'ı gerçekten kontrol edebilsin
+        if (!photonView.IsMine)
+        {
+            photonView.RequestOwnership();
+        }
+
+        // Grab state'i herkese duyur
+        photonView.RPC(nameof(RPC_BeginGrab), RpcTarget.All, holder.ViewID);
     }
 
+    /// <summary>
+    /// Oyuncu chunk'ı bırakmak istediğinde çağrılır.
+    /// </summary>
     public void EndGrab(PhotonView holder)
     {
-        if (!holder.IsMine) return;
-        photonView.RPC(nameof(RPC_EndGrab), RpcTarget.AllBuffered);
+        if (holder == null || !holder.IsMine)
+            return;
+
+        photonView.RPC(nameof(RPC_EndGrab), RpcTarget.All);
     }
 
     [PunRPC]
@@ -83,7 +112,7 @@ public class OreChunk : MonoBehaviourPun
             {
                 holdTarget = cam.transform;
 
-                // *** ÖNEMLİ: İlk tutuş mesafesini gerçek mesafeden ayarla ***
+                // İlk tutuşta aradaki gerçek mesafeyi baz al
                 float dist = Vector3.Distance(holdTarget.position, transform.position);
                 holdDistance = Mathf.Clamp(dist, minHoldDistance, maxHoldDistance);
             }
@@ -105,11 +134,13 @@ public class OreChunk : MonoBehaviourPun
 
     private void Update()
     {
-        if (!photonView.IsMine) return;
+        // Input sadece owner'da işlesin
+        if (!photonView.IsMine)
+            return;
 
         if (isGrabbed && holdTarget != null)
         {
-            // Scroll yönü: ileri çevirince uzaklaşsın, geri çevirince yaklaşsın
+            // Scroll ile ileri/geri mesafeyi ayarla
             float scroll = Input.GetAxis("Mouse ScrollWheel");
             if (Mathf.Abs(scroll) > 0.001f)
             {
@@ -124,7 +155,9 @@ public class OreChunk : MonoBehaviourPun
 
     private void FixedUpdate()
     {
-        if (!photonView.IsMine) return;
+        // Fizik sadece owner tarafından hesaplanmalı
+        if (!photonView.IsMine)
+            return;
 
         if (isGrabbed && holdTarget != null)
         {
@@ -162,7 +195,12 @@ public class OreChunk : MonoBehaviourPun
         }
 
         // 3) Eğer hala terrain ile overlap varsa hafif yukarı it
-        Collider[] cols = Physics.OverlapSphere(targetPos, sphereRadius, groundMask, QueryTriggerInteraction.Ignore);
+        Collider[] cols = Physics.OverlapSphere(
+            targetPos,
+            sphereRadius,
+            groundMask,
+            QueryTriggerInteraction.Ignore);
+
         if (cols.Length > 0)
         {
             targetPos.y += groundPadding;

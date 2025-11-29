@@ -45,25 +45,16 @@ public class PlayerMining : MonoBehaviourPun
         }
 
         if (playerCamera == null)
-        {
             playerCamera = GetComponentInChildren<Camera>(true);
-        }
 
         if (animator == null)
-        {
             animator = GetComponentInChildren<Animator>(true);
-        }
 
         if (cartPush == null)
-        {
             cartPush = GetComponent<PlayerCartPush>();
-        }
 
         if (cartLayer == 0)
-        {
-            // Varsayılan olarak "Sepet" layer'ını kullan
             cartLayer = LayerMask.GetMask("Sepet");
-        }
 
         hashIsMining = Animator.StringToHash("IsMining");
     }
@@ -92,7 +83,6 @@ public class PlayerMining : MonoBehaviourPun
 
         if (mineHeld && currentResource != null)
         {
-            // Animasyon
             if (!isMining)
             {
                 isMining = true;
@@ -100,7 +90,6 @@ public class PlayerMining : MonoBehaviourPun
                     animator.SetBool(hashIsMining, true);
             }
 
-            // Tüm tick / titreme / FX / ses işini MineableResource hallediyor
             currentResource.Mine(Time.deltaTime, this);
         }
         else
@@ -130,7 +119,6 @@ public class PlayerMining : MonoBehaviourPun
             {
                 TryStartGrab();
             }
-            // grabbedChunk hareketini kendi OreChunk scriptin yapıyor
         }
         else
         {
@@ -147,25 +135,23 @@ public class PlayerMining : MonoBehaviourPun
 
         Ray ray = new Ray(playerCamera.transform.position, playerCamera.transform.forward);
 
-        // 🔒 1) Eğer crosshair SEPETE (SepetArkaCollider) bakıyorsa,
-        //      chunk grab DENEME sakın yapma -> öncelik sepet push'ta
+        // 1) Eğer crosshair SEPETE (SepetArkaCollider) bakıyorsa,
+        //    chunk grab denemesini iptal et -> sepet push'a öncelik ver
         if (cartLayer != 0)
         {
-            if (Physics.SphereCast(ray, grabSphereRadius, out RaycastHit cartHit, grabRange, cartLayer,
-                    QueryTriggerInteraction.Ignore))
+            if (Physics.SphereCast(ray, grabSphereRadius, out RaycastHit cartHit, grabRange,
+                    cartLayer, QueryTriggerInteraction.Ignore))
             {
-                // Bu collider'ın üzerinde ShoppingCartHandle var mı?
                 if (cartHit.collider.GetComponent<ShoppingCartHandle>() != null)
                 {
-                    // Sepete bakıyoruz, grab iptal, PlayerCartPush bu frame'de devreye girecek
                     return;
                 }
             }
         }
 
-        // 🔍 2) SphereCast ile bakılan chunk'ı bul
+        // 2) SphereCast ile bakılan chunk'ı bul (cartLayer hariç)
         if (Physics.SphereCast(ray, grabSphereRadius, out RaycastHit hit, grabRange,
-                ~cartLayer, QueryTriggerInteraction.Ignore)) // cartLayer hariç her şey
+                ~cartLayer, QueryTriggerInteraction.Ignore))
         {
             OreChunk chunk = hit.collider.GetComponentInParent<OreChunk>();
             if (chunk != null)
@@ -176,7 +162,7 @@ public class PlayerMining : MonoBehaviourPun
             }
         }
 
-        // 3) Bakılan yönün etrafında en yakın chunk'ı ara (optionel yardımcı)
+        // 3) Bakılan yönün etrafında en yakın chunk'ı ara
         Vector3 center = playerCamera.transform.position + playerCamera.transform.forward * 2f;
         Collider[] cols = Physics.OverlapSphere(center, 1.2f, ~cartLayer, QueryTriggerInteraction.Ignore);
 
@@ -222,9 +208,7 @@ public class PlayerMining : MonoBehaviourPun
         if (res != null)
         {
             if (currentResource != null && currentResource != res)
-            {
                 currentResource.SetPromptVisible(false);
-            }
 
             currentResource = res;
             currentResource.SetPromptVisible(true);   // [E] TOPLA aç

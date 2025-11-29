@@ -7,8 +7,6 @@ public class ShoppingCartHandle : MonoBehaviour
     private void Reset()
     {
         if (cart == null)
-        {
             cart = GetComponentInParent<ShoppingCart>();
-        }
     }
 }
