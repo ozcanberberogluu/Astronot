@@ -16,6 +16,10 @@ public class PlayerMining : MonoBehaviourPun
     [SerializeField] private float grabSphereRadius = 0.4f;
     [SerializeField] private float maxGrabDistance = 8f;
 
+    [Header("Sepet Layer (SepetArkaCollider için)")]
+    [Tooltip("Sepetin layer'ı (SepetArkaCollider bu layer'da olmalı).")]
+    [SerializeField] private LayerMask cartLayer;
+
     [Header("Diğer Sistemler")]
     [SerializeField] private PlayerCartPush cartPush;   // sepet iterken mining kapansın
 
@@ -26,6 +30,7 @@ public class PlayerMining : MonoBehaviourPun
 
     // --- Grab state ---
     private OreChunk grabbedChunk;
+    public bool IsHoldingChunk => grabbedChunk != null;
 
     private PhotonView pv;
 
@@ -52,6 +57,12 @@ public class PlayerMining : MonoBehaviourPun
         if (cartPush == null)
         {
             cartPush = GetComponent<PlayerCartPush>();
+        }
+
+        if (cartLayer == 0)
+        {
+            // Varsayılan olarak "Sepet" layer'ını kullan
+            cartLayer = LayerMask.GetMask("Sepet");
         }
 
         hashIsMining = Animator.StringToHash("IsMining");
@@ -134,10 +145,27 @@ public class PlayerMining : MonoBehaviourPun
     {
         if (playerCamera == null) return;
 
-        // 1) SphereCast ile bakılan chunk'ı bul
         Ray ray = new Ray(playerCamera.transform.position, playerCamera.transform.forward);
 
-        if (Physics.SphereCast(ray, grabSphereRadius, out RaycastHit hit, grabRange))
+        // 🔒 1) Eğer crosshair SEPETE (SepetArkaCollider) bakıyorsa,
+        //      chunk grab DENEME sakın yapma -> öncelik sepet push'ta
+        if (cartLayer != 0)
+        {
+            if (Physics.SphereCast(ray, grabSphereRadius, out RaycastHit cartHit, grabRange, cartLayer,
+                    QueryTriggerInteraction.Ignore))
+            {
+                // Bu collider'ın üzerinde ShoppingCartHandle var mı?
+                if (cartHit.collider.GetComponent<ShoppingCartHandle>() != null)
+                {
+                    // Sepete bakıyoruz, grab iptal, PlayerCartPush bu frame'de devreye girecek
+                    return;
+                }
+            }
+        }
+
+        // 🔍 2) SphereCast ile bakılan chunk'ı bul
+        if (Physics.SphereCast(ray, grabSphereRadius, out RaycastHit hit, grabRange,
+                ~cartLayer, QueryTriggerInteraction.Ignore)) // cartLayer hariç her şey
         {
             OreChunk chunk = hit.collider.GetComponentInParent<OreChunk>();
             if (chunk != null)
@@ -148,9 +176,9 @@ public class PlayerMining : MonoBehaviourPun
             }
         }
 
-        // 2) Bakılan yönün etrafında en yakın chunk'ı ara
+        // 3) Bakılan yönün etrafında en yakın chunk'ı ara (optionel yardımcı)
         Vector3 center = playerCamera.transform.position + playerCamera.transform.forward * 2f;
-        Collider[] cols = Physics.OverlapSphere(center, 1.2f);
+        Collider[] cols = Physics.OverlapSphere(center, 1.2f, ~cartLayer, QueryTriggerInteraction.Ignore);
 
         float bestDist = float.MaxValue;
         OreChunk best = null;
@@ -189,11 +217,10 @@ public class PlayerMining : MonoBehaviourPun
     {
         if (!pv.IsMine) return;
 
-        // 1) Maden alanına girdiysek
+        // Maden alanına girdiysek
         MineableResource res = other.GetComponentInParent<MineableResource>();
         if (res != null)
         {
-            // Eski madenin UI'ını kapat
             if (currentResource != null && currentResource != res)
             {
                 currentResource.SetPromptVisible(false);
@@ -202,10 +229,6 @@ public class PlayerMining : MonoBehaviourPun
             currentResource = res;
             currentResource.SetPromptVisible(true);   // [E] TOPLA aç
         }
-
-        // 2) Deposit / base vs. varsa, eski kodların varsa buraya eklenebilir
-        // DepositZone depot = other.GetComponent<DepositZone>();
-        // ...
     }
 
     private void OnTriggerExit(Collider other)
@@ -219,7 +242,5 @@ public class PlayerMining : MonoBehaviourPun
             currentResource = null;
             StopMining();
         }
-
-        // DepositZone çıkış vs. burada ele alınabilir
     }
 }

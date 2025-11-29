@@ -1,4 +1,4 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 using Photon.Pun;
 
 [RequireComponent(typeof(PhotonView))]
@@ -6,12 +6,13 @@ public class PlayerCartPush : MonoBehaviourPun
 {
     [Header("Referanslar")]
     public Camera playerCamera;
+    [SerializeField] private PlayerMining playerMining;   // ELÄ°NDE CHUNK VAR MI KONTROLÃœ
 
-    [Header("Push Ray Ayarları")]
+    [Header("Push Ray AyarlarÄ±")]
     public float pushRayRange = 3f;
     public float pushSphereRadius = 0.25f;
 
-    [Tooltip("Sepet / sepet tutma için kullanılacak layer mask. Boş bırakılırsa 'Sepet' layer'ını otomatik kullanır.")]
+    [Tooltip("Sepet / sepet tutma iÃ§in kullanÄ±lacak layer mask. BoÅŸ bÄ±rakÄ±lÄ±rsa 'Sepet' layer'Ä±nÄ± otomatik kullanÄ±r.")]
     public LayerMask pushMask;
 
     public bool IsPushing { get; private set; }
@@ -34,9 +35,14 @@ public class PlayerCartPush : MonoBehaviourPun
             playerCamera = GetComponentInChildren<Camera>(true);
         }
 
+        if (playerMining == null)
+        {
+            playerMining = GetComponent<PlayerMining>();
+        }
+
         if (pushMask == 0)
         {
-            // Prefab sepeti 'Sepet' layer'ına koymuşsun, onu default olarak kullanıyoruz
+            // Prefab sepeti 'Sepet' layer'Ä±na koymuÅŸsun, onu default olarak kullanÄ±yoruz
             pushMask = LayerMask.GetMask("Sepet");
         }
     }
@@ -47,13 +53,24 @@ public class PlayerCartPush : MonoBehaviourPun
 
         bool holdingMouse = Input.GetMouseButton(0);
 
+        // ğŸ”’ Elinde maden parÃ§asÄ± varsa sepeti ASLA tutma
+        if (playerMining != null && playerMining.IsHoldingChunk)
+        {
+            // Her ihtimale karÅŸÄ±, o anda push aktifse de bÄ±rakalÄ±m
+            if (IsPushing)
+            {
+                StopPush();
+            }
+            return;
+        }
+
         if (holdingMouse)
         {
             if (!IsPushing)
             {
                 TryStartPush();
             }
-            // IsPushing true ise hareket hesabını ShoppingCart zaten yapıyor
+            // IsPushing true ise hareket hesaplamasÄ±nÄ± ShoppingCart yapÄ±yor
         }
         else
         {
@@ -69,9 +86,13 @@ public class PlayerCartPush : MonoBehaviourPun
         if (playerCamera == null)
             return;
 
+        // Elinde chunk varken buraya gelmemesi gerekiyor ama ekstra koruma:
+        if (playerMining != null && playerMining.IsHoldingChunk)
+            return;
+
         Ray ray = new Ray(playerCamera.transform.position, playerCamera.transform.forward);
 
-        // Tüm çarpanları al, en yakın ShoppingCartHandle'ı seç
+        // TÃ¼m Ã§arpanlarÄ± al, en yakÄ±n ShoppingCartHandle'Ä± seÃ§
         RaycastHit[] hits = Physics.SphereCastAll(
             ray,
             pushSphereRadius,

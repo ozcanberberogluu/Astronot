@@ -718,6 +718,9 @@ MonoBehaviour:
   grabRange: 8
   grabSphereRadius: 0.4
   maxGrabDistance: 8
+  cartLayer:
+    serializedVersion: 2
+    m_Bits: 0
   cartPush: {fileID: 3818685857987945665}
 --- !u!114 &3818685857987945665
 MonoBehaviour:
@@ -732,6 +735,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   playerCamera: {fileID: 8743226417933314578}
+  playerMining: {fileID: 0}
   pushRayRange: 3
   pushSphereRadius: 0.25
   pushMask:
