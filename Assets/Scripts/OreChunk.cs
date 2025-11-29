@@ -1,23 +1,30 @@
 ﻿using UnityEngine;
 using Photon.Pun;
+using TMPro;
 
 [RequireComponent(typeof(PhotonView))]
 [RequireComponent(typeof(Rigidbody))]
-public class OreChunk : MonoBehaviourPun
+public class OreChunk : MonoBehaviourPun, IPunObservable
 {
     [Header("Data")]
     public OreType oreType;
     public int value;
 
+    [Header("World Text")]
+    [SerializeField] private TMP_Text valueText;
+    [SerializeField] private Canvas valueCanvas;   // textin olduğu world-space canvas
+    [Tooltip("Text'in chunk merkezinin ne kadar ÜSTÜNDE duracağını belirler.")]
+    [SerializeField] private float textHeightOffset = 0.35f;
+
     [Header("Grab Settings")]
     [Tooltip("Chunk tutulurken kamera önündeki varsayılan mesafe.")]
-    public float holdDistance = 2f;          // default daha yakın
+    public float holdDistance = 2f;
 
     public float minHoldDistance = 1f;
     public float maxHoldDistance = 6f;
 
     [Tooltip("Chunk'ın hedef pozisyona yaklaşma hızı.")]
-    public float followSpeed = 12f;         // biraz düşük, daha smooth
+    public float followSpeed = 12f;
 
     [Header("Ground Check")]
     [Tooltip("Chunk ile terrain arasında kalmasını istediğimiz minimum boşluk.")]
@@ -44,6 +51,9 @@ public class OreChunk : MonoBehaviourPun
     private Transform holdTarget;
     private int holderId = -1;
 
+    // Billboard için
+    private Camera mainCam;
+
     private void Awake()
     {
         rb = GetComponent<Rigidbody>();
@@ -53,40 +63,85 @@ public class OreChunk : MonoBehaviourPun
         rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
 
         if (groundMask == 0)
-        {
-            // Varsayılan: Default + Terrain
             groundMask = LayerMask.GetMask("Default", "Terrain");
+
+        // TMP referanslarını otomatik bul
+        if (valueText == null)
+            valueText = GetComponentInChildren<TMP_Text>(true);
+
+        if (valueCanvas == null && valueText != null)
+            valueCanvas = valueText.GetComponentInParent<Canvas>(true);
+
+        // Oyuna spawn olduğunda text gizli olsun
+        SetTextVisible(false);
+
+        // Değer sadece owner tarafında randomlanır,
+        // diğer client'lara OnPhotonSerializeView ile aktarılır.
+        if (photonView.IsMine && value == 0)
+        {
+            value = GetRandomValueForType(oreType);
         }
+
+        UpdateValueString();
+
+        mainCam = Camera.main;
+    }
+
+    private void Start()
+    {
+        if (mainCam == null)
+            mainCam = Camera.main;
+    }
+
+    // Fiyat aralıkları
+    private int GetRandomValueForType(OreType type)
+    {
+        switch (type)
+        {
+            case OreType.Diamond:
+                // 20 - 50 €
+                return Random.Range(20, 51);
+            case OreType.Iron:
+                // 15 - 25 €
+                return Random.Range(15, 26);
+            default:
+                // fallback
+                return Random.Range(10, 21);
+        }
+    }
+
+    private void UpdateValueString()
+    {
+        if (valueText != null)
+            valueText.text = value.ToString() + "€";
+    }
+
+    private void SetTextVisible(bool visible)
+    {
+        if (valueCanvas != null)
+            valueCanvas.enabled = visible;
     }
 
     public void Initialize(OreType type, int chunkValue)
     {
         oreType = type;
         value = chunkValue;
+        UpdateValueString();
     }
 
-    /// <summary>
-    /// Oyuncu chunk'ı tutmaya başladığında PlayerMining burayı çağırır.
-    /// Sadece local holder çağırabilir.
-    /// </summary>
+    // ------------ GRAB API ------------
+
     public void BeginGrab(PhotonView holder)
     {
         if (holder == null || !holder.IsMine)
             return;
 
-        // 🔑 OWNER’I AL: join oyuncu chunk'ı gerçekten kontrol edebilsin
         if (!photonView.IsMine)
-        {
-            photonView.RequestOwnership();
-        }
+            photonView.RequestOwnership();   // join oyuncu da full kontrol alabilsin
 
-        // Grab state'i herkese duyur
         photonView.RPC(nameof(RPC_BeginGrab), RpcTarget.All, holder.ViewID);
     }
 
-    /// <summary>
-    /// Oyuncu chunk'ı bırakmak istediğinde çağrılır.
-    /// </summary>
     public void EndGrab(PhotonView holder)
     {
         if (holder == null || !holder.IsMine)
@@ -112,11 +167,14 @@ public class OreChunk : MonoBehaviourPun
             {
                 holdTarget = cam.transform;
 
-                // İlk tutuşta aradaki gerçek mesafeyi baz al
                 float dist = Vector3.Distance(holdTarget.position, transform.position);
                 holdDistance = Mathf.Clamp(dist, minHoldDistance, maxHoldDistance);
             }
         }
+
+        // Tutulurken text HERKES için görünür
+        SetTextVisible(true);
+        UpdateValueString();
     }
 
     [PunRPC]
@@ -130,17 +188,20 @@ public class OreChunk : MonoBehaviourPun
         rb.useGravity = true;
         rb.drag = dropDrag;
         rb.angularDrag = dropAngularDrag;
+
+        // Bırakıldığında text gizlenir
+        SetTextVisible(false);
     }
+
+    // ------------ UPDATE / PHYSICS ------------
 
     private void Update()
     {
-        // Input sadece owner'da işlesin
         if (!photonView.IsMine)
             return;
 
         if (isGrabbed && holdTarget != null)
         {
-            // Scroll ile ileri/geri mesafeyi ayarla
             float scroll = Input.GetAxis("Mouse ScrollWheel");
             if (Mathf.Abs(scroll) > 0.001f)
             {
@@ -155,7 +216,6 @@ public class OreChunk : MonoBehaviourPun
 
     private void FixedUpdate()
     {
-        // Fizik sadece owner tarafından hesaplanmalı
         if (!photonView.IsMine)
             return;
 
@@ -169,13 +229,35 @@ public class OreChunk : MonoBehaviourPun
         }
     }
 
-    // ---------------- TERRAIN SAFE MOVE ----------------
+    // 🔁 Text için billboard + sabit yükseklik
+    private void LateUpdate()
+    {
+        if (valueCanvas == null || !valueCanvas.enabled)
+            return;
+
+        if (mainCam == null)
+        {
+            mainCam = Camera.main;
+            if (mainCam == null) return;
+        }
+
+        Transform t = valueCanvas.transform;
+
+        // 1) Pozisyonu: chunk merkezinin DÜNYA yukarısında sabit bir offset
+        t.position = transform.position + Vector3.up * textHeightOffset;
+
+        // 2) Rotasyonu: kameraya baksın, yukarı ekseni dünya up olsun
+        Vector3 dir = t.position - mainCam.transform.position;
+        if (dir.sqrMagnitude > 0.0001f)
+        {
+            t.rotation = Quaternion.LookRotation(dir, Vector3.up);
+        }
+    }
+
     private void MoveGrabbed()
     {
-        // 1) Kamera önünde hedef pozisyon
         Vector3 targetPos = holdTarget.position + holdTarget.forward * holdDistance;
 
-        // 2) SphereCast ile zemini yakala (terrain için daha güvenli)
         Vector3 sphereOrigin = targetPos + Vector3.up * 1.0f;
 
         if (Physics.SphereCast(
@@ -189,12 +271,10 @@ public class OreChunk : MonoBehaviourPun
         {
             float groundY = hit.point.y + groundPadding;
 
-            // Hedef zeminin ALTINDA ise Y'yi yukarı çek
             if (targetPos.y < groundY)
                 targetPos.y = groundY;
         }
 
-        // 3) Eğer hala terrain ile overlap varsa hafif yukarı it
         Collider[] cols = Physics.OverlapSphere(
             targetPos,
             sphereRadius,
@@ -206,7 +286,6 @@ public class OreChunk : MonoBehaviourPun
             targetPos.y += groundPadding;
         }
 
-        // 4) Smooth hareket
         Vector3 newPos = Vector3.Lerp(transform.position, targetPos, followSpeed * Time.fixedDeltaTime);
         rb.MovePosition(newPos);
     }
@@ -220,6 +299,24 @@ public class OreChunk : MonoBehaviourPun
         {
             v.y = maxFallSpeed;
             rb.velocity = v;
+        }
+    }
+
+    // ------------- PHOTON SYNC (Value senkron) -------------
+    public void OnPhotonSerializeView(PhotonStream stream, PhotonMessageInfo info)
+    {
+        if (stream.IsWriting)
+        {
+            stream.SendNext(value);
+        }
+        else
+        {
+            int newVal = (int)stream.ReceiveNext();
+            if (newVal != value)
+            {
+                value = newVal;
+                UpdateValueString();
+            }
         }
     }
 }

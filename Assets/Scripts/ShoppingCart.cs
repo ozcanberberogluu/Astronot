@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using Photon.Pun;
+using TMPro;
 
 [RequireComponent(typeof(PhotonView))]
 [RequireComponent(typeof(Rigidbody))]
@@ -36,6 +37,10 @@ public class ShoppingCart : MonoBehaviourPun
     [Tooltip("Modelin ön yüzünü düzeltmek için Y ekseninde ekstra derece. Örn: 180")]
     public float modelForwardOffsetY = 180f;
 
+    [Header("Value / UI")]
+    public int totalValue;
+    [SerializeField] private TMP_Text valueText;   // Sepetin önündeki "100€" yazýsý
+
     private Rigidbody rb;
 
     // Push state
@@ -56,21 +61,21 @@ public class ShoppingCart : MonoBehaviourPun
         rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
 
         if (groundMask == 0)
-        {
-            // Varsayýlan olarak Default + Terrain
             groundMask = LayerMask.GetMask("Default", "Terrain");
-        }
+
+        if (valueText == null)
+            valueText = GetComponentInChildren<TMP_Text>(true);
+
+        UpdateValueText();
     }
 
     private void FixedUpdate()
     {
-        // Hareketi sadece owner hesaplasýn, diðerleri PhotonTransformView'dan alýr
         if (!photonView.IsMine)
             return;
 
         Vector3 targetPos = transform.position;
 
-        // PUSH VARSA: oyuncunun önünde hizala
         if (isPushed && pusherTransform != null)
         {
             Vector3 forward = pusherTransform.forward;
@@ -83,19 +88,15 @@ public class ShoppingCart : MonoBehaviourPun
             targetPos = pusherTransform.position + forward * pushDistanceFromPlayer;
         }
 
-        // Her durumda terrain üzerinde hover et
         targetPos = GetHoverPosition(targetPos);
 
-        // Bobbing
         bobTime += Time.fixedDeltaTime * bobbingSpeed;
         float bobOffset = Mathf.Sin(bobTime) * bobbingAmplitude;
         targetPos.y += bobOffset;
 
-        // Smooth pozisyon
         Vector3 newPos = Vector3.Lerp(transform.position, targetPos, moveSpeed * Time.fixedDeltaTime);
         rb.MovePosition(newPos);
 
-        // Smooth rotasyon (sadece push varken oyuncuya bak)
         if (isPushed && pusherTransform != null)
         {
             Vector3 dir = pusherTransform.forward;
@@ -106,9 +107,7 @@ public class ShoppingCart : MonoBehaviourPun
                 Quaternion targetRot = Quaternion.LookRotation(dir);
 
                 if (Mathf.Abs(modelForwardOffsetY) > 0.01f)
-                {
                     targetRot *= Quaternion.Euler(0f, modelForwardOffsetY, 0f);
-                }
 
                 Quaternion newRot = Quaternion.Slerp(rb.rotation, targetRot, rotationSpeed * Time.fixedDeltaTime);
                 rb.MoveRotation(newRot);
@@ -129,30 +128,22 @@ public class ShoppingCart : MonoBehaviourPun
         return basePos;
     }
 
-    // --------- PUSH API (PlayerCartPush bunu çaðýracak) ---------
+    // --------- PUSH API ---------
 
-    /// <summary>
-    /// Oyuncu sepeti itmeye baþlamak istediðinde PlayerCartPush burayý çaðýrýr.
-    /// </summary>
     public void BeginPush(PhotonView holder)
     {
         if (holder == null || !holder.IsMine)
             return;
 
-        // Sepetin owner'ý bu oyuncu olsun
         if (!photonView.IsMine)
             photonView.RequestOwnership();
 
-        // Sepetin içindeki tüm chunk'larýn owner'lýðýný da bu oyuncuya devret
+        // Sepeti iten oyuncuya içindeki tüm chunk'larýn ownerlýðýný ver
         TransferContainedChunksOwnership(holder);
 
-        // Push state'i herkese duyur
         photonView.RPC(nameof(RPC_BeginPush), RpcTarget.AllBuffered, holder.ViewID);
     }
 
-    /// <summary>
-    /// Oyuncu sepeti býrakmak istediðinde çaðrýlýr.
-    /// </summary>
     public void EndPush(PhotonView holder)
     {
         if (holder == null || !holder.IsMine)
@@ -169,9 +160,7 @@ public class ShoppingCart : MonoBehaviourPun
 
         PhotonView pv = PhotonView.Find(pusherViewId);
         if (pv != null)
-        {
             pusherTransform = pv.transform;
-        }
     }
 
     [PunRPC]
@@ -182,10 +171,6 @@ public class ShoppingCart : MonoBehaviourPun
         pusherTransform = null;
     }
 
-    /// <summary>
-    /// Bu sepetin içindeki bütün OreChunk'larýn owner'lýðýný,
-    /// sepeti iten oyuncuya devreder.
-    /// </summary>
     private void TransferContainedChunksOwnership(PhotonView newOwner)
     {
         if (newOwner == null || !newOwner.IsMine)
@@ -199,29 +184,58 @@ public class ShoppingCart : MonoBehaviourPun
             if (chunkView == null) continue;
 
             if (!chunkView.IsMine)
-            {
                 chunkView.RequestOwnership();
-            }
         }
+    }
+
+    // --------- VALUE / UI ---------
+
+    private void ChangeTotalValue(int delta)
+    {
+        if (!photonView.IsMine)
+            return;
+
+        totalValue += delta;
+        if (totalValue < 0) totalValue = 0;
+
+        photonView.RPC(nameof(RPC_SyncTotalValue), RpcTarget.All, totalValue);
+    }
+
+    [PunRPC]
+    private void RPC_SyncTotalValue(int newTotal)
+    {
+        totalValue = newTotal;
+        UpdateValueText();
+    }
+
+    private void UpdateValueText()
+    {
+        if (valueText != null)
+            valueText.text = totalValue.ToString() + "€";
     }
 
     // --------- CHUNK LÝSTESÝ API ---------
 
-    /// <summary>
-    /// Sepet trigger'ýna giren OreChunk'ý kayýt eder.
-    /// </summary>
     public void RegisterChunk(OreChunk chunk)
     {
         if (chunk == null) return;
-        containedChunks.Add(chunk);
+
+        // HashSet ayný chunk'ý iki kez eklemeyi engeller
+        bool added = containedChunks.Add(chunk);
+        if (added)
+        {
+            ChangeTotalValue(chunk.value);
+        }
     }
 
-    /// <summary>
-    /// Sepet trigger'ýndan çýkan OreChunk'ý listeden çýkarýr.
-    /// </summary>
     public void UnregisterChunk(OreChunk chunk)
     {
         if (chunk == null) return;
-        containedChunks.Remove(chunk);
+
+        bool removed = containedChunks.Remove(chunk);
+        if (removed)
+        {
+            ChangeTotalValue(-chunk.value);
+        }
     }
 }
